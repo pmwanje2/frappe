@@ -90,6 +90,9 @@ def set_session_default_values(default_values: str | dict[str, Any]):
 		if value is not None and not isinstance(value, str):
 			raise frappe.ValidationError("Session default values must be text or null")
 		if value not in (None, ""):
+			existing_name = frappe.db.get_value(configured[key], value, "name")
+			if existing_name is None or str(existing_name) != value:
+				raise frappe.ValidationError("Session default value must match an existing name exactly")
 			frappe.get_doc(configured[key], value).check_permission("read")
 
 	savepoint = "session_defaults_" + uuid.uuid4().hex
