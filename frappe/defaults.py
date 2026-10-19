@@ -163,7 +163,7 @@ def set_default(key, value, parent, parenttype="__default"):
 		.run(as_dict=True)
 	)
 	if current_value:
-		if current_value[0].defvalue == cstr(value):
+		if value is not None and current_value[0].defvalue == cstr(value):
 			# Nothing has changed
 			return
 		frappe.db.delete("DefaultValue", {"defkey": key, "parent": parent})
