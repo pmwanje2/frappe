@@ -8,6 +8,7 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import sbool
 
 
 class SessionDefaultSettings(Document):
@@ -53,6 +54,7 @@ def _explicit_default(doctype, key, user):
 
 @frappe.whitelist()
 def get_session_default_values(explicit_only=False):
+	explicit_only = sbool(explicit_only)
 	user = _require_authenticated_user() if explicit_only else None
 	settings = frappe.get_single("Session Default Settings")
 	fields = []
