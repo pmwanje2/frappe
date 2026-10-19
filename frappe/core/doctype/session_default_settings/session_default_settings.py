@@ -94,7 +94,8 @@ def set_session_default_values(default_values: str | dict[str, Any]):
 	frappe.db.savepoint(savepoint)
 	for entry in default_values:
 		try:
-			frappe.defaults.set_user_default(entry, default_values.get(entry))
+			value = default_values.get(entry)
+			frappe.defaults.set_user_default(entry, None if value == "" else value)
 		except Exception:
 			try:
 				frappe.db.rollback(save_point=savepoint)
