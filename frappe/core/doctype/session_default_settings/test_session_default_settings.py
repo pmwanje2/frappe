@@ -331,6 +331,12 @@ class TestSessionDefaultSettingsSafety(IntegrationTestCase):
 		self.assertIsNone(self._fields(explicit_only=True)["country"]["default"])
 		self.assertIsNone(self._stored_value("country"))
 
+	def test_get_http_string_false_is_not_treated_as_explicit_only(self):
+		frappe.defaults.set_global_default("country", "India")
+
+		self.assertEqual(self._fields(explicit_only="false")["country"]["default"], "India")
+		self.assertIsNone(self._fields(explicit_only="true")["country"]["default"])
+
 	def test_get_explicit_uses_only_the_current_users_storage(self):
 		frappe.defaults.set_user_default("country", "India")
 		frappe.defaults.set_global_default("country", "Uganda")
