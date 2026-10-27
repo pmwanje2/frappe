@@ -47,3 +47,29 @@ Normal hooks were inspected: only sample Git hooks are installed and no
 `core.hooksPath` is configured; pre-commit is unavailable. No hooks are bypassed.
 Ruff 0.16.4 from the existing qualified SiteOps venv checks/formats changed
 Python paths; `bash -n` checks the test-only container launcher.
+
+## Approved imported-native source-unit run 1 of 2
+
+Frozen head: `66ce81dcb302c50324770a15717d95f45c9e1e3f`.
+Launcher SHA256: `2174d7dfc2b95a0683104b7563aa87a45ebd85b22e6c8b02ce3732a22466479e`.
+Command: `bash frappe/workflow/doctype/workflow_action/run_candidate_units.sh 66ce81dcb302c50324770a15717d95f45c9e1e3f`.
+Interpreter: Python 3.14.7. Both production modules imported from `/candidate`;
+all eight supplied source hashes verified, including unchanged 62df workflow
+and workflow_action hashes recorded in the RCA.
+
+Selected: `TestWorkflowActionCandidateUnits`, 5 tests, 0 passed, 0 behavioral
+failures, 5 errors, 0 skipped; exit 1. **CANNOT-VERIFY, not behavioral RED**.
+Lazy safe_exec/PDF import attempted `/logs/cssutils.log` while working at `/tmp`;
+no retries, dependency installation or guard relaxation performed.
+
+Raw output: `/tmp/frappe-workflow5967-units.lX8E3j/units.log`, 308 lines,
+SHA256 `29d0ae53f6c2582225d7bf43a3f5a16a9873519763e6e33476508968e074d70d`.
+CID: `89d5bb73c649455809527130c1a0a629ba798681eb0f103ae4b45336943d3f31`.
+Docker `--rm` removed it; separate bounded exact-CID inspection returned
+`No such container`. No container removal beyond the approved run was needed.
+The launcher trap stopped before its own readback because `read` on Docker's
+newline-free CID file returns nonzero under `set -e`. The approved launcher
+remains unchanged for root inspection. Run 2 needs a new frozen-head/script ACK.
+
+Further pre-implementation tests exercise independently literal actor exclusions
+and creator-email flag propagation through native discovery's field projection.
