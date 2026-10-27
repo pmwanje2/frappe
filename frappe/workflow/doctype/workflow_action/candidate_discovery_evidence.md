@@ -116,3 +116,44 @@ subtests, zero errors/skips on unchanged 62df production. This is SOURCE RED,
 not real permission-query or imported-native proof. No container run followed
 the initial failed setup run. A subsequent ACK for the older b696dca527 head
 cannot authorize executing these changed tests; a new exact-head ACK is needed.
+
+## Corrected imported-native RED, approved run 2 of 3
+
+Frozen RED: `2ac9e4cd0c6883b8bd23e8a092e0cb245f0f6743`.
+Launcher: `4804011c699d61c95dadf30cce8ce9a9e6f356f0cf97340cf8678671867f8906`.
+Command: `bash frappe/workflow/doctype/workflow_action/run_candidate_units.sh 2ac9e4cd0c6883b8bd23e8a092e0cb245f0f6743`.
+Python 3.14.7; all source hashes verified and both framework modules imported
+from `/candidate`. Selected exactly `TestWorkflowActionCandidateUnits`, six
+methods: **1 passed, 5 behavioral failures, 0 errors, 0 skips**, exit 1.
+
+The failures demonstrate unassigned recipients, permission-denied target with
+another condition-ineligible role holder, warm-cache/candidate-context errors,
+bypass/diagnostic isolation and escaping role-read failure. Disabled/revoked
+membership through the native role API already passes.
+
+Full raw output: `/tmp/frappe-workflow5967-units.35P4CA/units.log`, 102 lines,
+SHA256 `6f05a0847f859d8987c63ed33cb2b07e7f989d296bc80da320cf1b8dc2b45fd0`.
+CID `cec611ca007762ce7f6830dc3d797179b132dfc5ecf57e8ce778a7c823782e76`;
+launcher verified absence and printed `CONTAINER_ABSENT UNIT_EXIT=1`.
+No integration class, site initialization, actual DB, ERPNext, network or
+production target was used. This is imported-native source-unit evidence only.
+
+## Minimum SOURCE GREEN, separate production commit
+
+The same offline command on Python 3.12.3 now passes all 16 methods (including
+their preservation/security subtests), zero failures/errors/skips. Assertions
+are unchanged from the committed RED tests. Ruff 0.16.4 checks/formats all five
+affected Python paths; `git diff --check` passes.
+
+Only `model/workflow.py` and native `workflow_action.py` change production
+behavior: a bounded private context, one shared candidate predicate, additive
+opt-in discovery for creation, and candidate rechecking for native email.
+Discovery also carries the existing `send_email_to_creator` field so native
+creator email policy is not lost in its projection. Existing qualifying edges
+remain indexed without a current holder; creator email filtering is separate.
+
+AST comparison against 62df confirms unchanged native `get_transitions`,
+`apply_workflow`, `has_approval_access`, condition evaluation and safe globals.
+This comparison is authority-preservation evidence, NOT integration execution.
+Imported-native GREEN still requires root's separate frozen-head ACK for run 3.
+Custom SiteOps expiry and fresh-lab DB/all-tenant integration remain unqualified.

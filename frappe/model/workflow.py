@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from contextlib import contextmanager
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 import frappe
@@ -99,6 +101,47 @@ def is_transition_condition_satisfied(transition, doc) -> bool:
 		return True
 	else:
 		return frappe.safe_eval(transition.condition, get_workflow_safe_globals(), dict(doc=doc.as_dict()))
+
+
+@contextmanager
+def _workflow_candidate_context(user):
+	"""Isolate candidate reads and restore the saving request's exact context."""
+	missing = object()
+	keys = (
+		"session",
+		"cache",
+		"form_dict",
+		"jenv_restricted",
+		"jenv_unrestricted",
+		"role_permissions",
+		"new_doc_templates",
+		"user_perms",
+		"request_cache",
+		"flags",
+		"message_log",
+		"permission_debug_log",
+	)
+	original = {key: getattr(frappe.local, key, missing) for key in keys}
+	try:
+		# set_user mutates its session in place; never give it the saver's object.
+		frappe.local.session = frappe._dict()
+		frappe.set_user(user)
+		# set_user does not clear userless request-cache keys or diagnostic state.
+		frappe.local.request_cache = defaultdict(dict)
+		flags = original["flags"]
+		frappe.local.flags = frappe._dict() if flags is missing else deepcopy(flags)
+		for key in ("ignore_permissions", "ignore_user_permissions", "ignore_user_permissions_for_doctype"):
+			frappe.local.flags.pop(key, None)
+		frappe.local.message_log = []
+		frappe.local.permission_debug_log = []
+		yield
+	finally:
+		for key, value in original.items():
+			if value is missing:
+				if hasattr(frappe.local, key):
+					delattr(frappe.local, key)
+			else:
+				setattr(frappe.local, key, value)
 
 
 def evaluate_workflow_value(value, evaluate_as_expression, doc):
