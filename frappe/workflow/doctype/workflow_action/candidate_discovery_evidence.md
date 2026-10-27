@@ -219,3 +219,43 @@ GREEN remains qualified only at 0800; it is NOT carried forward as a pass for
 these later test/optimization revisions. Real DB integration, full tenant
 qualification, custom expiry and independent review of this new head remain
 unperformed/pending. No push, PR, deployment or production operation occurred.
+
+## Additional synthetic regression coverage (test-only)
+
+The prior approved exact-76 source qualification was 19 offline SOURCE methods
+and 6 imported Python 3.14.7 units, zero failures/errors/skips. Historical
+0800-only language above is superseded by that exact-76 receipt; those imported
+results are not relabeled as qualification of this later test-only revision.
+
+The existing offline test file now contains 29 passing methods: all original
+19 method ASTs unchanged, plus 10 synthetic regression methods with finite
+subtests. Command: `python3 frappe/workflow/doctype/workflow_action/test_workflow_action_candidates.py -v`.
+Python 3.12.3, zero failures/errors/skips. Ruff lint/format and diff whitespace
+checks pass. Production modules and the container launcher/guard are unchanged.
+
+Public fixtures contain synthetic roles, fields, document types, abstract
+pattern-cell identifiers and small artificial values only. No customer
+configuration, staff identity, source registry/revision or private policy
+mapping is included. These are generic regression patterns, not execution or
+qualification of any tenant's configured workflows.
+
+Covered patterns: role-qualified human-owner and system-owner forwarding;
+different-forwarder/editor refusal; ordinary review limits and exceptional
+value/list refusals; scoped release/reject refusals; mixed optional and
+nonoptional destinations; saver-qualified versus candidate-only edges without
+holders; native workflow/state/creator email flags, enqueue suppression,
+eligible owner/editor recipients and resave dedupe; generic single-reviewer,
+four-eyes and no-workflow platform baselines. Native function bodies execute;
+storage, queue, permission and mail transport boundaries remain doubles.
+
+The new integration lifecycle method uses existing ToDo/workflow fixtures and
+native apply/save/completion hooks. It asserts persisted Open/Completed/reentry,
+fresh task identity, completion actor/role and unauthorized-action refusal.
+It is AUTHORED ONLY, NOT RUN, and is not selected by the SOURCE unit file.
+Both real-DB integration methods, real email delivery, all-tenant outcomes,
+custom expiry and fresh-bench adoption remain CANNOT-VERIFY.
+
+This coverage-only amendment found no new production defect and introduces no
+production change or new RED/GREEN claim. Independent review must refresh at
+the new exact test-only head. No container run, push, pin or runtime action was
+performed or newly authorized.

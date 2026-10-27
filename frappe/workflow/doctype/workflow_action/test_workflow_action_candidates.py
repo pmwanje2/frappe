@@ -9,6 +9,7 @@ The loader compiles and executes functions, not a translated workflow algorithm.
 """
 
 import ast
+import json
 import sys
 import unittest
 from collections import defaultdict
@@ -26,6 +27,7 @@ MAKER = "maker@example.test"
 CHECKER = "checker@example.test"
 OTHER = "other@example.test"
 ROLE = "Test Approver"
+FIXTURES = json.loads(Path(__file__).with_name("candidate_workflow_fixtures.json").read_text())
 
 
 class Row(dict):
@@ -440,6 +442,351 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 		self.assertTrue(self.native["is_workflow_action_candidate"](CHECKER, self.doc, transition))
 		self.holders[ROLE].remove(CHECKER)
 		self.assertFalse(self.native["is_workflow_action_candidate"](CHECKER, self.doc, transition))
+
+	def use_workflow_fixture(self, workflow, state, *, roles=None):
+		"""Configuration/storage doubles only; discovery and receivers remain native."""
+		self.actions.clear()
+		self.doc.doctype = workflow["document_type"]
+		self.doc.workflow_state = state
+		self.transitions = [
+			Row(send_email_to_creator=0, **row) for row in workflow["transitions"] if row["state"] == state
+		]
+		if roles is not None:
+			self.transitions = [row for row in self.transitions if row.allowed in roles]
+		optional = {row["state"]: row["is_optional_state"] for row in workflow["states"]}
+		self.native["get_workflow_name"] = lambda doctype: workflow["name"]
+		self.native["get_state_optional_field_value"] = lambda workflow_name, state: optional[state]
+		self.doc.update(
+			group_a="Test Group",
+			group_b="Test Group",
+			amount_a=2,
+			amount_b=2,
+			amount_c=2,
+			amount_d=2,
+			blocked_amount=0,
+			adjustment_amount=0,
+			adjustments=[],
+			kind="Review Type B",
+			entries=[Row(key="KEY_A"), Row(key="KEY_B")],
+		)
+
+		def get_value(doctype, filters=None, fieldname=None, **kwargs):
+			if doctype == "User" and fieldname == "email":
+				return filters
+			if doctype == "Has Role":
+				self.assertEqual(fieldname, "name")
+				self.assertEqual(filters["parenttype"], "User")
+				self.assertEqual(filters["role"], "Test Self Approver")
+				return "native-role-row" if filters["parent"] in {CHECKER, OTHER} else None
+			if doctype == "Test Policy":
+				self.assertEqual(filters, "Test Group")
+				self.assertIn(fieldname, {"limit_a", "limit_b"})
+				return 5
+			if doctype == "Test Lookup" and fieldname == "category":
+				return {"KEY_A": "Allowed", "KEY_B": "Allowed"}[filters]
+			raise AssertionError((doctype, filters, fieldname))
+
+		self.frappe.db.get_value = get_value
+
+	def assert_candidate_pipeline(self, edges, recipients):
+		transitions = self.native["get_next_possible_transitions"](
+			"Test Workflow", self.doc.workflow_state, self.doc, include_candidate_transitions=True
+		)
+		self.assertEqual({(row.allowed, row.action) for row in transitions}, edges)
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual(len(self.actions), int(bool(edges)))
+		if edges:
+			self.assertEqual({row.role for row in self.actions[0].permitted_roles}, {r for r, _ in edges})
+			self.assertEqual(self.actions[0].modified_by, MAKER)
+		data = self.native["get_users_next_action_data"](transitions, self.doc)
+		self.assertEqual(
+			{user: {row.action_name for row in item.possible_actions} for user, item in data.items()},
+			recipients,
+		)
+
+	def test_owner_human_self_approver_owner_keeps_unlimited_native_candidates(self):
+		role = "Test Self Approver"
+		self.holders = {role: [CHECKER, OTHER]}
+		for workflow in FIXTURES["owner_cases"]:
+			with self.subTest(doctype=workflow["document_type"]):
+				self.use_workflow_fixture(
+					workflow,
+					"Pending Approval" if workflow["document_type"] == "Review Type A" else "Pending",
+					roles={role},
+				)
+				self.doc.owner, self.doc.modified_by = CHECKER, MAKER
+				for field in (
+					"amount_a",
+					"amount_b",
+					"amount_c",
+					"amount_d",
+				):
+					self.doc[field] = 9
+				self.assertTrue(
+					self.native["is_workflow_action_candidate"](CHECKER, self.doc, self.transitions[0])
+				)
+				# Creator-email suppression does not remove the legitimate owner candidate/index.
+				self.assert_candidate_pipeline({(role, "Approve")}, {OTHER: {"Approve"}})
+
+	def test_owner_administrator_owned_bill_only_its_self_approver_forwarder_receives(self):
+		role = "Test Self Approver"
+		self.holders = {role: [CHECKER, OTHER]}
+		for workflow in FIXTURES["owner_cases"]:
+			for forwarder in (CHECKER, OTHER, MAKER):
+				with self.subTest(doctype=workflow["document_type"], forwarder=forwarder):
+					self.use_workflow_fixture(
+						workflow,
+						"Pending Approval" if workflow["document_type"] == "Review Type A" else "Pending",
+						roles={role},
+					)
+					self.doc.owner, self.doc.modified_by = "Administrator", forwarder
+					eligible = forwarder in {CHECKER, OTHER}
+					self.assert_candidate_pipeline(
+						{(role, "Approve")} if eligible else set(),
+						{forwarder: {"Approve"}} if eligible else {},
+					)
+
+	def test_owner_forwarding_clerk_owned_bill_does_not_grant_self_approval(self):
+		role = "Test Self Approver"
+		self.holders = {role: [CHECKER, OTHER]}
+		for workflow in FIXTURES["owner_cases"]:
+			with self.subTest(doctype=workflow["document_type"]):
+				self.use_workflow_fixture(
+					workflow,
+					"Pending Approval" if workflow["document_type"] == "Review Type A" else "Pending",
+					roles={role},
+				)
+				self.doc.owner, self.doc.modified_by = MAKER, CHECKER
+				self.assert_candidate_pipeline(set(), {})
+
+	def test_owner_system_owned_clerk_bill_keeps_first_approver_limit_and_editor_refusal(self):
+		role = "Test Reviewer"
+		self.holders = {role: [MAKER, CHECKER, OTHER]}
+		for workflow in FIXTURES["owner_cases"]:
+			for amount, allowed in ((2, True), (9, False)):
+				with self.subTest(doctype=workflow["document_type"], amount=amount):
+					self.use_workflow_fixture(
+						workflow,
+						"Pending Approval" if workflow["document_type"] == "Review Type A" else "Pending",
+						roles={role},
+					)
+					self.doc.owner, self.doc.modified_by = "Administrator", MAKER
+					for field in (
+						"amount_a",
+						"amount_b",
+						"amount_c",
+						"amount_d",
+					):
+						self.doc[field] = amount
+					self.assert_candidate_pipeline(
+						{(role, "Approve")} if allowed else set(),
+						{CHECKER: {"Approve"}, OTHER: {"Approve"}} if allowed else {},
+					)
+
+	def test_owner_system_owned_writeoff_and_deduction_refusals_reach_native_pipeline(self):
+		role = "Test Self Approver"
+		self.holders = {role: [CHECKER, OTHER]}
+		exclusions = {
+			"Review Type F": [("blocked_amount", 1)],
+			"Review Type D": [("blocked_amount", 1)],
+			"Review Type B": [("blocked_amount", 1), ("kind", "Blocked")],
+			"Review Type C": [("adjustment_amount", 1), ("adjustments", ["deduction"])],
+		}
+		for workflow in FIXTURES["owner_cases"]:
+			for field, value in exclusions.get(workflow["document_type"], []):
+				with self.subTest(doctype=workflow["document_type"], refusal=field):
+					self.use_workflow_fixture(workflow, "Pending", roles={role})
+					self.doc.owner, self.doc.modified_by = "Administrator", CHECKER
+					self.doc[field] = value
+					self.assert_candidate_pipeline(set(), {})
+
+	def test_scoped_release_native_release_reject_roles_and_scope_refusals(self):
+		workflow = FIXTURES["scoped_release"]
+		roles = {"Test Release Reviewer", "Test Alternate Reviewer"}
+		self.holders = {role: [MAKER, CHECKER, OTHER] for role in roles}
+		for request_type in (
+			"Kind A",
+			"Kind B",
+			"Kind C",
+			"Kind D",
+			"Kind E",
+			"Outside Scope",
+			"invalid",
+			None,
+		):
+			with self.subTest(request_type=request_type):
+				self.use_workflow_fixture(workflow, "Pending Release")
+				self.doc.owner, self.doc.modified_by = MAKER, CHECKER
+				self.doc.request_kind = request_type
+				allowed = request_type in {
+					"Kind A",
+					"Kind B",
+					"Kind C",
+					"Kind D",
+					"Kind E",
+				}
+				self.assert_candidate_pipeline(
+					{(role, "Release") for role in roles} if allowed else set(),
+					{OTHER: {"Release"}} if allowed else {},
+				)
+				# Reject's Cancelled destination is optional: it is never indexed/mailed,
+				# but its actual native candidate predicate must still preserve MR scope.
+				for row in self.transitions:
+					self.assertEqual(
+						self.native["is_workflow_action_candidate"](OTHER, self.doc, row), allowed
+					)
+					self.assertFalse(self.native["is_workflow_action_candidate"](MAKER, self.doc, row))
+					self.assertFalse(self.native["is_workflow_action_candidate"](CHECKER, self.doc, row))
+
+	def test_owner_mixed_optional_withdraw_and_approve_with_and_without_holders(self):
+		workflow = next(row for row in FIXTURES["owner_cases"] if row["document_type"] == "Review Type F")
+		role = "Test Reviewer"
+		for has_holders in (True, False):
+			for owner in (MAKER, OTHER):
+				with self.subTest(holders=has_holders, owner=owner):
+					self.use_workflow_fixture(workflow, "Pending", roles={role, "Test Editor"})
+					self.holders = {role: [CHECKER], "Test Editor": [owner]} if has_holders else {}
+					self.doc.owner, self.doc.modified_by = owner, MAKER
+					indexed = has_holders or owner == MAKER
+					self.assert_candidate_pipeline(
+						{(role, "Approve")} if indexed else set(),
+						{CHECKER: {"Approve"}} if has_holders else {},
+					)
+
+	def test_unconditional_release_mixed_optional_cancelled_preserves_release_without_holders(self):
+		role = "Test Releaser"
+		for has_holders in (True, False):
+			with self.subTest(holders=has_holders):
+				self.use_workflow_fixture(FIXTURES["optional_release"], "Pending Release")
+				self.holders = {role: [MAKER, CHECKER]} if has_holders else {}
+				self.assert_candidate_pipeline(
+					{(role, "Release")}, {CHECKER: {"Release"}} if has_holders else {}
+				)
+
+	def test_workflow_state_and_creator_email_gates_use_native_enqueue_and_receivers(self):
+		for workflow_email in (0, 1):
+			for state_email in (0, 1):
+				for creator_email in (0, 1):
+					with self.subTest(workflow=workflow_email, state=state_email, creator=creator_email):
+						self.actions.clear()
+						self.transitions.clear()
+						self.holders = {ROLE: [MAKER, CHECKER, OTHER]}
+						self.doc.owner, self.doc.modified_by = MAKER, CHECKER
+						self.transition(
+							"doc.owner == frappe.session.user or doc.modified_by != frappe.session.user",
+							allow_self_approval=1,
+							send_email_to_creator=creator_email,
+						)
+						# Execute the actual native workflow-level getter as well as process's state gate.
+						functions(
+							"frappe/model/workflow.py",
+							self.native,
+							{"send_email_alert", "get_workflow_field_value"},
+						)
+						self.frappe.get_cached_value = lambda *args: workflow_email
+						self.frappe.db.get_value = lambda doctype, *args, **kwargs: (
+							state_email if doctype == "Workflow Document State" else args[0]
+						)
+						queued, sent = [], []
+						self.native["enqueue"] = lambda method, **kwargs: queued.append((method, kwargs))
+						self.native["get_common_email_args"] = lambda doc: {
+							"subject": "native test",
+							"message": "approval",
+						}
+						self.frappe.sendmail = lambda **kwargs: sent.append(kwargs)
+						self.native["process_workflow_actions"](self.doc, "on_update")
+						self.assertEqual(len(self.actions), 1, "email flags cannot suppress indexing")
+						self.assertEqual(len(queued), int(bool(workflow_email and state_email)))
+						for method, kwargs in queued:
+							self.assertIs(method, self.native["send_workflow_action_email"])
+							self.assertEqual(kwargs["queue"], "short")
+							self.assertTrue(kwargs["enqueue_after_commit"])
+							method(kwargs["doc"], kwargs["transitions"])
+						self.assertEqual(
+							{mail["recipients"][0] for mail in sent},
+							({OTHER, MAKER} if creator_email else {OTHER}) if queued else set(),
+						)
+						for mail in sent:
+							self.assertEqual(
+								[row.action_name for row in mail["args"]["actions"]], ["Approve"]
+							)
+						self.native["process_workflow_actions"](self.doc, "on_update")
+						self.assertEqual(len(queued), int(bool(workflow_email and state_email)))
+
+	def test_synthetic_pattern_cells_retain_platform_baseline_and_no_workflow_path(self):
+		self.assertEqual(
+			FIXTURES["pattern_cells"],
+			[
+				"cell_a",
+				"cell_b",
+				"cell_c",
+				"cell_d",
+				"cell_e",
+				"cell_f",
+				"cell_g",
+				"cell_h",
+			],
+		)
+		for tenant, state, roles, edges, receivers in (
+			(
+				"baseline_a",
+				"Draft",
+				{"Test Reference Reviewer": [MAKER, CHECKER, OTHER], "Test Owner Reviewer": [MAKER]},
+				{
+					("Test Reference Reviewer", "Approve"),
+					("Test Reference Reviewer", "Reject"),
+					("Test Owner Reviewer", "Approve"),
+					("Test Owner Reviewer", "Reject"),
+				},
+				{CHECKER: {"Approve", "Reject"}, OTHER: {"Approve", "Reject"}},
+			),
+			(
+				"baseline_b",
+				"Draft",
+				{"Test Stock Reviewer": [MAKER, CHECKER, OTHER]},
+				{("Test Stock Reviewer", "Approve")},
+				{CHECKER: {"Approve"}, OTHER: {"Approve"}},
+			),
+			(
+				"baseline_c",
+				"Pending Review",
+				{"Test Quality Reviewer": [MAKER, CHECKER, OTHER], "Test Owner Reviewer": [MAKER]},
+				{
+					("Test Quality Reviewer", "Approve"),
+					("Test Quality Reviewer", "Reject"),
+					("Test Owner Reviewer", "Approve"),
+					("Test Owner Reviewer", "Reject"),
+				},
+				{CHECKER: {"Reject"}, OTHER: {"Approve", "Reject"}},
+			),
+		):
+			with self.subTest(tenant=tenant, family="synthetic baseline"):
+				self.use_workflow_fixture(FIXTURES["platform_baselines"][tenant], state)
+				self.holders = roles
+				self.doc.update(
+					has_reference="Reference",
+					reference_code="TEST-REFERENCE",
+					side_a="Reference",
+					side_b="Reference",
+					submitted_by=CHECKER,
+				)
+				self.assert_candidate_pipeline(edges, receivers)
+		self.assertEqual(FIXTURES["no_workflow_patterns"], {"cell_g": [], "cell_h": []})
+		for tenant in ("cell_g", "cell_h"):
+			with self.subTest(tenant=tenant, family="synthetic native platform and no-workflow paths"):
+				self.actions.clear()
+				self.transitions.clear()
+				self.holders = {ROLE: [CHECKER, OTHER]}
+				self.native["get_workflow_name"] = lambda doctype: "Platform baseline"
+				self.native["get_state_optional_field_value"] = lambda *args: False
+				self.transition("")
+				self.assert_candidate_pipeline(
+					{(ROLE, "Approve")}, {CHECKER: {"Approve"}, OTHER: {"Approve"}}
+				)
+				self.actions.clear()
+				self.native["get_workflow_name"] = lambda doctype: None
+				self.native["process_workflow_actions"](self.doc, "on_update")
+				self.assertEqual(self.actions, [])
 
 
 if __name__ == "__main__":
