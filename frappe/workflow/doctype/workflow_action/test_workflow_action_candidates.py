@@ -442,5 +442,71 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 		self.assertFalse(self.native["is_workflow_action_candidate"](CHECKER, self.doc, transition))
 
 
+class TestWorkflowActionFixtureSetup(unittest.TestCase):
+	def test_integration_setup_promotes_fresh_users_and_preserves_prior_roles(self):
+		"""Execute only fixture setup; role persistence is doubled, not DB proof."""
+		path = ROOT / "frappe/workflow/doctype/workflow_action/test_workflow_action.py"
+		tree = ast.parse(path.read_text())
+		integration = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+		methods = [node for node in integration.body if isinstance(node, ast.FunctionDef)]
+		self.assertEqual(len(methods), 2)
+		for method in methods:
+			for prior_approver in (False, True):
+				with self.subTest(method=method.name, prior_approver=prior_approver):
+
+					class FixtureUser:
+						def __init__(self):
+							self.roles = [Row(role=ROLE)] if prior_approver else []
+							self.user_type = "System User" if prior_approver else "Website User"
+							self.enabled = 1
+							self.reloads = 0
+
+						def add_roles(self, role):
+							if not any(row.role == role for row in self.roles):
+								self.roles.append(Row(role=role))
+							self.user_type = "System User"
+
+						def reload(self):
+							self.reloads += 1
+							return self
+
+						def remove_roles(self, role):
+							self.roles = [row for row in self.roles if row.role != role]
+
+					users = {name: FixtureUser() for name in ("test2@example.com", "test3@example.com")}
+					case = unittest.TestCase()
+					workflow = Row(name="Test Workflow")
+					namespace = {
+						"self": case,
+						"frappe": SimpleNamespace(
+							set_user=lambda name: None,
+							get_doc=lambda doctype, name: users[name],
+							delete_doc=lambda *args: None,
+						),
+						"make_test_records": lambda doctype: None,
+						"create_todo_workflow": lambda: workflow,
+					}
+					setup = []
+					for statement in method.body:
+						if isinstance(statement, ast.Assign) and any(
+							isinstance(target, ast.Attribute) and target.attr == "send_email_alert"
+							for target in statement.targets
+						):
+							break
+						if not isinstance(statement, (ast.Import, ast.ImportFrom)):
+							setup.append(statement)
+					try:
+						exec(compile(ast.Module(body=setup, type_ignores=[]), str(path), "exec"), namespace)
+						for user in users.values():
+							self.assertEqual(user.reloads, 1)
+							self.assertEqual(user.user_type, "System User")
+							self.assertTrue(user.enabled)
+							self.assertEqual([row.role for row in user.roles], [ROLE])
+					finally:
+						case.doCleanups()
+					for user in users.values():
+						self.assertEqual([row.role for row in user.roles], [ROLE] if prior_approver else [])
+
+
 if __name__ == "__main__":
 	unittest.main()
