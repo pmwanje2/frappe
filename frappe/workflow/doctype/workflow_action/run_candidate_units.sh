@@ -17,7 +17,7 @@ cleanup() {
     trap - EXIT INT TERM
     if [[ -s $cid_file ]]; then
         local container_id identity
-        read -r container_id < "$cid_file"
+        IFS= read -r container_id < "$cid_file" || [[ -n $container_id ]]
         if [[ ! $container_id =~ ^[0-9a-f]{64}$ ]]; then
             printf 'CLEANUP_REFUSED invalid CID\n'
             exit 90
@@ -74,7 +74,7 @@ timeout --signal=TERM --kill-after=5s 120s docker run --rm \
     --workdir=/tmp --entrypoint=/usr/bin/env \
     sha256:f9de222710a9ec83223a6dd183eb03fc317df86fb662dd1f095308e70970e2a4 \
     -i PATH=/home/frappe/frappe-bench/env/bin:/usr/bin:/bin \
-    PYTHONPATH=/candidate PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/candidate PYTHONDONTWRITEBYTECODE=1 FRAPPE_STREAM_LOGGING=1 \
     python /candidate/frappe/workflow/doctype/workflow_action/candidate_unit_runner.py \
     "$source_head" "${declarations[@]}" 2>&1 | tee "$run_dir/units.log"
 unit_status=${PIPESTATUS[0]}

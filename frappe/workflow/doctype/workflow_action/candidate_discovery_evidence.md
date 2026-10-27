@@ -73,3 +73,19 @@ remains unchanged for root inspection. Run 2 needs a new frozen-head/script ACK.
 
 Further pre-implementation tests exercise independently literal actor exclusions
 and creator-email flag propagation through native discovery's field projection.
+
+## Root-approved runner correction, test-only
+
+Native logging configuration is `FRAPPE_STREAM_LOGGING=1` inside `env -i`;
+CID reading explicitly accepts a nonempty EOF-terminated CID before validating
+the same 64-hex format and enforcing unchanged name/label ownership checks.
+No masks, bounds, startup guards or test assertions are loosened.
+
+Root explicitly amended the source-unit budget: failed setup run 1 is preserved;
+at most two additional runs may qualify corrected RED and GREEN (three total).
+Each requires root's exact frozen-head/script ACK; another environment failure
+must stop without retry. No additional run has occurred at this commit.
+
+A minimum uncommitted implementation briefly passed the 14 SOURCE methods
+before this revised ordering arrived; it was removed completely. Both production
+files are again byte-identical to 62df before this test-only runner commit.
