@@ -81,7 +81,9 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 		self.holders = {ROLE: [CHECKER, OTHER]}
 		self.denied = set()
 		self.actions = []
-		self.frappe.get_all = lambda *args, **kwargs: self.transitions
+		self.frappe.get_all = lambda *args, **kwargs: [
+			Row((field, row.get(field)) for field in kwargs["fields"]) for row in self.transitions
+		]
 		self.frappe.db = SimpleNamespace(
 			get_value=lambda *args, **kwargs: "email@example.test", get_list=lambda *args, **kwargs: []
 		)
@@ -292,6 +294,42 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {OTHER})
 		self.holders[ROLE].remove(OTHER)
 		self.assertEqual(self.native["get_users_next_action_data"]([transition], self.doc), {})
+
+	def test_creator_email_flag_survives_transition_discovery(self):
+		self.holders[ROLE] = [MAKER]
+		self.transition("", allow_self_approval=1, send_email_to_creator=1)
+		transitions = self.native["get_next_possible_transitions"]("Test Workflow", "Pending", self.doc)
+		self.assertEqual(set(self.native["get_users_next_action_data"](transitions, self.doc)), {MAKER})
+
+	def test_candidate_edges_preserve_owner_editor_and_assignee_exclusions(self):
+		for name, condition, expected in (
+			(
+				"independent-review",
+				"doc.owner != frappe.session.user and doc.modified_by != frappe.session.user",
+				{CHECKER, OTHER},
+			),
+			(
+				"assigned-review",
+				"doc.assigned == frappe.session.user and doc.owner != frappe.session.user",
+				{CHECKER},
+			),
+			(
+				"independent-handoff",
+				"doc.modified_by != frappe.session.user and doc.owner != frappe.session.user",
+				{OTHER},
+			),
+		):
+			with self.subTest(family=name):
+				self.transitions.clear()
+				self.actions.clear()
+				self.holders[ROLE] = [MAKER, CHECKER, OTHER]
+				self.doc.modified_by = CHECKER if name == "independent-handoff" else MAKER
+				self.transition(condition)
+				self.native["process_workflow_actions"](self.doc, "on_update")
+				self.assertEqual(len(self.actions), 1)
+				self.assertEqual(
+					set(self.native["get_users_next_action_data"](self.transitions, self.doc)), expected
+				)
 
 
 if __name__ == "__main__":
