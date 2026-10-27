@@ -89,3 +89,10 @@ must stop without retry. No additional run has occurred at this commit.
 A minimum uncommitted implementation briefly passed the 14 SOURCE methods
 before this revised ordering arrived; it was removed completely. Both production
 files are again byte-identical to 62df before this test-only runner commit.
+
+Before corrected RED was run, inspection identified native metadata boundaries
+missing from the imported-unit fixture: `client_cache` supplies the child-table
+list, local System Settings supplies the strict-permission flag, and an empty
+list-query/translation store completes the isolated metadata world. These are
+memory-only storage fixtures; no native role/permission logic or assertions are
+replaced or weakened. The launcher/startup guard remain unchanged.

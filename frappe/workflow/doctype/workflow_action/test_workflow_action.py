@@ -63,6 +63,7 @@ class TestWorkflowActionCandidateUnits(unittest.TestCase):
 		frappe.local.flags = frappe._dict()
 		frappe.local.lang = "en"
 		frappe.local.conf = frappe._dict(db_type="mariadb")
+		frappe.local.system_settings = frappe._dict(apply_strict_user_permissions=0)
 		frappe.local.cache = {"saving": object()}
 		frappe.local.role_permissions = {}
 		frappe.local.user_perms = object()
@@ -74,7 +75,10 @@ class TestWorkflowActionCandidateUnits(unittest.TestCase):
 		self.role_cache = {}
 		self.sql_error = False
 		frappe.local.db = SimpleNamespace(
-			db_type="mariadb", sql=self.sql, get_value=lambda *args, **kwargs: "email@example.test"
+			db_type="mariadb",
+			sql=self.sql,
+			get_value=lambda *args, **kwargs: "email@example.test",
+			get_list=lambda *args, **kwargs: [],
 		)
 		meta = frappe._dict(
 			name="ToDo",
@@ -87,6 +91,7 @@ class TestWorkflowActionCandidateUnits(unittest.TestCase):
 		)
 		self.enterContext(patch.object(frappe, "in_test", True))
 		self.enterContext(patch.object(frappe, "cache", SimpleNamespace(hget=self.cached_value)))
+		self.enterContext(patch.object(frappe, "client_cache", SimpleNamespace(get_value=lambda key: [])))
 		self.enterContext(patch.object(frappe, "get_meta", return_value=meta))
 		self.enterContext(patch.object(frappe, "get_hooks", return_value={}))
 		self.enterContext(patch.object(frappe, "get_all", return_value=[]))
@@ -123,6 +128,8 @@ class TestWorkflowActionCandidateUnits(unittest.TestCase):
 			return self.role_cache[key]
 		if name == "user_permissions":
 			return self.scopes.get(key, {})
+		if name == "merged_translations":
+			return {}
 		if name == "is_table":
 			return False
 		return generator() if generator else None
