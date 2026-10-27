@@ -31,3 +31,19 @@ integration remains CANNOT-VERIFY without the correct carrier and fresh lab.
 SiteOps custom `valid_until` expiry is NOT a native 62df role API contract and
 remains separately unqualified; no read-time sweep or new provider is introduced.
 No deployment, image adoption, production execution, push or PR is authorized.
+
+## Additional test-only commit, still before production changes
+
+Same offline command/interpreter: 12 tests, 11 failing assertions (including
+subtests), zero errors/skips. Five preservation methods pass on the base.
+Failures now cover candidate conditions, request-cache isolation, fail-closed
+permission/expression errors, reassignment and candidate-edge retries.
+
+The existing native test module additionally contains five imported-module,
+site-free unit tests and one fresh-lab integration test. Neither has run yet.
+`run_candidate_units.sh` and `candidate_unit_runner.py` define the two-run-max
+RED/GREEN container plan; execution requires root's final source-head/hash ACK.
+Normal hooks were inspected: only sample Git hooks are installed and no
+`core.hooksPath` is configured; pre-commit is unavailable. No hooks are bypassed.
+Ruff 0.16.4 from the existing qualified SiteOps venv checks/formats changed
+Python paths; `bash -n` checks the test-only container launcher.
