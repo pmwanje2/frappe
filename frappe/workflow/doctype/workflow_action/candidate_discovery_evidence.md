@@ -96,3 +96,23 @@ list, local System Settings supplies the strict-permission flag, and an empty
 list-query/translation store completes the isolated metadata world. These are
 memory-only storage fixtures; no native role/permission logic or assertions are
 replaced or weakened. The launcher/startup guard remain unchanged.
+
+## Source review preconditions, before corrected native RED
+
+The fresh-lab integration test no longer grants System Manager. Both candidates
+are ordinary System Users with Test Approver; ToDo `allocated_to` distinguishes
+candidate A's read/list access from candidate B's refusal. Administrator is only
+the bootstrap/saving principal. Real DB integration has NOT run.
+
+New SOURCE negatives require the candidate context to exclude inherited
+permission-bypass flags and isolate nested flags plus `message_log` and
+`permission_debug_log`, restoring references, values and original absence on
+success and query errors. The imported-native unit class now has six methods;
+its new diagnostic case preserves the same checks with native permission code
+and memory-only storage.
+
+The unchanged offline command runs 16 methods: 20 failing assertions including
+subtests, zero errors/skips on unchanged 62df production. This is SOURCE RED,
+not real permission-query or imported-native proof. No container run followed
+the initial failed setup run. A subsequent ACK for the older b696dca527 head
+cannot authorize executing these changed tests; a new exact-head ACK is needed.

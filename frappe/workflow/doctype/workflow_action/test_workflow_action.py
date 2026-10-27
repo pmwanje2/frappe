@@ -18,24 +18,40 @@ class TestWorkflowAction(IntegrationTestCase):
 	def test_candidate_action_creation_uses_real_permission_aware_list(self):
 		"""Fresh-lab integration only; never selected by the source-unit runner."""
 		from frappe.tests.utils import make_test_records
-		from frappe.workflow.doctype.workflow.test_workflow import create_new_todo, create_todo_workflow
+		from frappe.workflow.doctype.workflow.test_workflow import create_todo_workflow
 
 		make_test_records("User")
 		frappe.set_user("Administrator")
-		user = frappe.get_doc("User", "test2@example.com")
-		prior_roles = {row.role for row in user.roles}
-		user.add_roles("Test Approver", "System Manager")
-		self.addCleanup(user.remove_roles, *({"Test Approver", "System Manager"} - prior_roles))
 		workflow = create_todo_workflow()
 		self.addCleanup(frappe.delete_doc, "Workflow", workflow.name)
+		for name in ("test2@example.com", "test3@example.com"):
+			user = frappe.get_doc("User", name)
+			self.assertEqual(user.user_type, "System User")
+			prior_roles = {row.role for row in user.roles}
+			self.assertNotIn("System Manager", prior_roles)
+			user.add_roles("Test Approver")
+			if "Test Approver" not in prior_roles:
+				self.addCleanup(user.remove_roles, "Test Approver")
 		workflow.send_email_alert = 0
 		for transition in workflow.transitions:
 			transition.condition = (
-				'frappe.session.user == "test2@example.com" and '
+				"frappe.session.user == doc.allocated_to and "
 				'frappe.db.get_list("ToDo", filters={"name": doc.name}, pluck="name") == [doc.name]'
 			)
 		workflow.save()
-		todo = create_new_todo()
+		todo = frappe.get_doc(
+			doctype="ToDo",
+			description="ordinary candidate list access",
+			allocated_to="test2@example.com",
+			assigned_by="Administrator",
+		).insert()
+		for name, expected in (("test2@example.com", [todo.name]), ("test3@example.com", [])):
+			with self.subTest(candidate=name), self.set_user(name):
+				self.assertNotIn("System Manager", frappe.get_roles())
+				self.assertEqual(
+					frappe.db.get_list("ToDo", filters={"name": todo.name}, pluck="name"), expected
+				)
+				self.assertEqual(frappe.has_permission("ToDo", doc=todo, print_logs=False), bool(expected))
 		rows = frappe.get_all(
 			"Workflow Action",
 			fields=["name", "modified_by"],
@@ -194,3 +210,41 @@ class TestWorkflowActionCandidateUnits(unittest.TestCase):
 		self.assertEqual(result, {})
 		for key, value in before.items():
 			self.assertIs(getattr(frappe.local, key), value)
+
+	def test_native_candidate_does_not_inherit_bypasses_or_leak_diagnostics(self):
+		frappe.local.flags = frappe._dict(
+			ignore_permissions=True,
+			ignore_user_permissions=True,
+			ignore_user_permissions_for_doctype="ToDo",
+			candidate_diagnostics=["saving"],
+		)
+		frappe.local.message_log = ["saving message"]
+		frappe.local.permission_debug_log = ["saving permission debug"]
+		before = dict(frappe.local)
+
+		def list_rows(*args, **kwargs):
+			if any(
+				frappe.flags.get(key)
+				for key in (
+					"ignore_permissions",
+					"ignore_user_permissions",
+					"ignore_user_permissions_for_doctype",
+				)
+			):
+				return ["permission bypass inherited"]
+			frappe.flags.candidate_diagnostics.append(frappe.session.user)
+			frappe.local.message_log.append("candidate message")
+			frappe.local.permission_debug_log.append("candidate permission debug")
+			return [frappe.session.user]
+
+		self.transition.condition = 'frappe.db.get_list("ToDo") == [doc.assigned]'
+		with patch.object(frappe.local.db, "get_list", side_effect=list_rows):
+			self.assertEqual(
+				set(actions.get_users_next_action_data([self.transition], self.doc)), {"checker@example.test"}
+			)
+		for key, value in before.items():
+			self.assertIs(getattr(frappe.local, key), value)
+		self.assertEqual(frappe.flags.candidate_diagnostics, ["saving"])
+		self.assertTrue(frappe.flags.ignore_permissions)
+		self.assertEqual(frappe.local.message_log, ["saving message"])
+		self.assertEqual(frappe.local.permission_debug_log, ["saving permission debug"])
