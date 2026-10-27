@@ -105,7 +105,7 @@ def is_transition_condition_satisfied(transition, doc) -> bool:
 
 @contextmanager
 def _workflow_candidate_context(user):
-	"""Isolate candidate reads and restore the saving request's exact context."""
+	"""Isolate and restore the known session, cache, bypass and diagnostic keys."""
 	missing = object()
 	keys = (
 		"session",

@@ -334,6 +334,7 @@ def get_next_possible_transitions(workflow_name, state, doc=None, *, include_can
 	)
 
 	transitions_to_return = []
+	role_users = {}
 
 	for transition in transitions:
 		is_next_state_optional = get_state_optional_field_value(workflow_name, transition.next_state)
@@ -350,9 +351,11 @@ def get_next_possible_transitions(workflow_name, state, doc=None, *, include_can
 			if not include_candidate_transitions:
 				continue
 			try:
+				if transition.allowed not in role_users:
+					role_users[transition.allowed] = frozenset(get_users_with_role(transition.allowed))
+				users = role_users[transition.allowed]
 				candidate_eligible = any(
-					is_workflow_action_candidate(user, doc, transition)
-					for user in get_users_with_role(transition.allowed)
+					is_workflow_action_candidate(user, doc, transition, _role_users=users) for user in users
 				)
 			except Exception:
 				candidate_eligible = False
@@ -363,14 +366,19 @@ def get_next_possible_transitions(workflow_name, state, doc=None, *, include_can
 	return transitions_to_return
 
 
-def is_workflow_action_candidate(user, doc, transition) -> bool:
-	"""Shared indexing/recipient predicate, not permission to execute a transition."""
+def is_workflow_action_candidate(user, doc, transition, *, _role_users=None) -> bool:
+	"""Check a candidate, optionally reusing this invocation's native roster snapshot.
+
+	The private roster is supplied only by the native batch callers below/above;
+	direct calls read current enabled membership. Neither grants execution rights.
+	"""
 	from frappe.permissions import has_permission
 
 	try:
 		with _workflow_candidate_context(user):
+			users = get_users_with_role(transition.allowed) if _role_users is None else _role_users
 			return bool(
-				user in get_users_with_role(transition.allowed)
+				user in users
 				and has_permission(doctype=doc, user=user, print_logs=False)
 				and has_approval_access(user, doc, transition)
 				and is_transition_condition_satisfied(transition, doc)
@@ -382,13 +390,18 @@ def is_workflow_action_candidate(user, doc, transition) -> bool:
 
 def get_users_next_action_data(transitions, doc):
 	user_data_map = {}
+	role_users = {}
 
 	for transition in transitions:
 		try:
-			users = get_users_with_role(transition.allowed)
+			if transition.allowed not in role_users:
+				role_users[transition.allowed] = frozenset(get_users_with_role(transition.allowed))
+			users = role_users[transition.allowed]
 		except Exception:
 			continue
-		filtered_users = [user for user in users if is_workflow_action_candidate(user, doc, transition)]
+		filtered_users = [
+			user for user in users if is_workflow_action_candidate(user, doc, transition, _role_users=users)
+		]
 		if doc.get("owner") in filtered_users and not transition.get("send_email_to_creator"):
 			filtered_users.remove(doc.get("owner"))
 		for user in filtered_users:

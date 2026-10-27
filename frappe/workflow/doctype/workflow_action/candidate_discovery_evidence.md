@@ -189,3 +189,33 @@ reads a shared two-candidate/two-edge roster four times instead of once;
 recipients read it six times instead of once. Direct predicate revocation
 rechecking already passes. Both new tests also require a fresh roster on the
 next invocation. They are committed RED before changing production reuse.
+
+## Invocation-local roster SOURCE GREEN
+
+Query-count RED/test-only AMEND commit:
+`83684f1e7310611e4680fbab4854e18ff8ba955c`.
+The separate minimum production change stores each successful native enabled,
+non-Administrator, explicit-membership roster as an immutable set in a local
+dictionary inside the discovery/recipient invocation. No global/request cache,
+provider, hook, grant, expiry policy or read-time sweep is introduced.
+
+Batch callers pass that native roster to the single predicate through private
+keyword `_role_users`; existing three-positional-argument calls still perform
+their own fresh native roster read. All document-permission, approval-access
+and condition checks still execute in candidate context for each offer. The
+roster is re-read on the next invocation, including after revocation. This is
+an invocation snapshot, not a guarantee of observing a concurrent revocation
+partway through the same batch; actual transition authority is unchanged.
+
+The unchanged SOURCE command on Python 3.12.3 now passes all 19 methods and
+their subtests, zero failures/errors/skips. For the two-edge shared-role case,
+discovery roster reads fall from four to one and native-recipient reads from
+six to one. These are memory-boundary query counts, not DB latency benchmarks.
+The context docstring now explicitly limits restoration to the known keys.
+Ruff 0.16.4 and formatting checks pass; `git diff --check` passes.
+
+No new container run was performed or authorized. Imported-native six-unit
+GREEN remains qualified only at 0800; it is NOT carried forward as a pass for
+these later test/optimization revisions. Real DB integration, full tenant
+qualification, custom expiry and independent review of this new head remain
+unperformed/pending. No push, PR, deployment or production operation occurred.
