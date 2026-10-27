@@ -393,6 +393,54 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 						self.assertEqual(self.local.message_log, ["saving"])
 						self.assertEqual(self.local.permission_debug_log, ["saving"])
 
+	def test_recipient_roster_is_read_once_per_role_per_invocation(self):
+		reads = []
+
+		def users_with_role(role):
+			reads.append(role)
+			return list(self.holders.get(role, []))
+
+		self.native["get_users_with_role"] = users_with_role
+		self.transition("", action="Approve")
+		self.transition("", action="Reject")
+		self.assertEqual(
+			set(self.native["get_users_next_action_data"](self.transitions, self.doc)), {CHECKER, OTHER}
+		)
+		self.assertEqual(reads, [ROLE], "two edges must reuse one native enabled-member roster")
+		self.holders[ROLE] = [OTHER]
+		self.assertEqual(set(self.native["get_users_next_action_data"](self.transitions, self.doc)), {OTHER})
+		self.assertEqual(reads, [ROLE, ROLE], "a new invocation must re-read revocations")
+
+	def test_discovery_roster_is_read_once_per_role_per_invocation(self):
+		reads = []
+
+		def users_with_role(role):
+			reads.append(role)
+			return list(self.holders.get(role, []))
+
+		self.native["get_users_with_role"] = users_with_role
+		self.transition("doc.assigned == frappe.session.user", action="Approve")
+		self.transition("doc.assigned == frappe.session.user", action="Reject")
+		transitions = self.native["get_next_possible_transitions"](
+			"Test Workflow", "Pending", self.doc, include_candidate_transitions=True
+		)
+		self.assertEqual({row.action for row in transitions}, {"Approve", "Reject"})
+		self.assertEqual(reads, [ROLE], "candidate discovery must not re-read a roster per candidate or edge")
+		self.holders[ROLE] = []
+		self.assertEqual(
+			self.native["get_next_possible_transitions"](
+				"Test Workflow", "Pending", self.doc, include_candidate_transitions=True
+			),
+			[],
+		)
+		self.assertEqual(reads, [ROLE, ROLE])
+
+	def test_direct_candidate_predicate_rechecks_membership_each_time(self):
+		transition = self.transition("doc.assigned == frappe.session.user")
+		self.assertTrue(self.native["is_workflow_action_candidate"](CHECKER, self.doc, transition))
+		self.holders[ROLE].remove(CHECKER)
+		self.assertFalse(self.native["is_workflow_action_candidate"](CHECKER, self.doc, transition))
+
 
 if __name__ == "__main__":
 	unittest.main()

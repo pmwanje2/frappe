@@ -155,5 +155,37 @@ remain indexed without a current holder; creator email filtering is separate.
 AST comparison against 62df confirms unchanged native `get_transitions`,
 `apply_workflow`, `has_approval_access`, condition evaluation and safe globals.
 This comparison is authority-preservation evidence, NOT integration execution.
-Imported-native GREEN still requires root's separate frozen-head ACK for run 3.
 Custom SiteOps expiry and fresh-lab DB/all-tenant integration remain unqualified.
+
+## Imported-native GREEN at exact 0800, approved final run 3
+
+Qualified source: `0800bc5eb6e0d52a70ca8931414a0555f4220197`.
+Python 3.14.7, six selected imported-native unit methods passed, zero
+failures/errors/skips, exit 0. Native DB integration was NOT selected or run.
+Launcher readback printed `CONTAINER_ABSENT UNIT_EXIT=0`.
+Raw output `/tmp/frappe-workflow5967-units.0NdYHh/units.log`, SHA256
+`83ef22b12610666c11cc798501be349659144b48c756b9700408f4cc845c036f`.
+SOURCE tests at that head: 16 passed, zero failures/errors/skips; raw output
+`/tmp/frappe-workflow5967-units.0NdYHh/source-units.log`, SHA256
+`4b9e10b7369565d4ba53375465505ccfdbf004f3b4b90f7a9e4714250b1c85d1`.
+All three authorized container runs are consumed. No additional run is granted.
+
+## Grok AMEND, test-only before roster optimization
+
+Static review found the unexecuted integration test passed `print_logs=False`
+to frappe's convenience wrapper, which does not support that keyword. It now
+calls `frappe.permissions.has_permission` directly with unchanged ordinary-user
+A-read/B-denied assertions. The previous six-unit success did not qualify that
+real-DB integration test; its execution remains CANNOT-VERIFY.
+
+Context restoration is bounded to the twelve named session/cache/flags/log
+keys, not every possible lazy local. For example, native permissions may create
+`system_settings` outside that set. No caller-identity leak was established;
+no broad local-context framework is added or claimed.
+
+Before any optimization, the offline command on Python 3.12.3 runs 19 methods:
+17 passed, two genuine query-count failures, zero errors/skips. Native discovery
+reads a shared two-candidate/two-edge roster four times instead of once;
+recipients read it six times instead of once. Direct predicate revocation
+rechecking already passes. Both new tests also require a fresh roster on the
+next invocation. They are committed RED before changing production reuse.
