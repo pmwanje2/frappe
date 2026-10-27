@@ -9,6 +9,7 @@ The loader compiles and executes functions, not a translated workflow algorithm.
 """
 
 import ast
+import sys
 import unittest
 from collections import defaultdict
 from collections.abc import Callable
@@ -179,6 +180,118 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 		transition = self.transition("doc.assigned == frappe.session.user")
 		result = self.native["get_users_next_action_data"]([transition], self.doc)
 		self.assertEqual(set(result), {CHECKER}, "unassigned role holder must not receive an action")
+
+	def test_candidate_condition_uses_isolated_request_cache(self):
+		@self.frappe.request_cache
+		def list_rows():
+			return [self.local.session.user]
+
+		self.frappe.db.get_list = lambda *args, **kwargs: list_rows()
+		self.assertEqual(list_rows(), [MAKER])
+		cache = self.local.request_cache
+		transition = self.transition('frappe.db.get_list("ToDo") == [doc.assigned]')
+		for holders in ([CHECKER, OTHER], [OTHER, CHECKER]):
+			with self.subTest(order=holders):
+				self.holders[ROLE] = holders
+				self.assertEqual(
+					set(self.native["get_users_next_action_data"]([transition], self.doc)), {CHECKER}
+				)
+		self.assertIs(self.local.request_cache, cache)
+		self.assertEqual(list_rows(), [MAKER])
+
+	def test_candidate_permission_denial_cannot_add_an_edge(self):
+		self.transition("doc.assigned == frappe.session.user")
+		self.denied.add(CHECKER)
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual(self.actions, [])
+
+	def test_condition_and_permission_errors_fail_closed_and_restore_context(self):
+		for failure in ("condition", "permission"):
+			for full_context in (False, True):
+				with self.subTest(failure=failure, full_context=full_context):
+					if full_context:
+						for key in ("form_dict", "jenv_restricted", "jenv_unrestricted", "new_doc_templates"):
+							setattr(self.local, key, {"saving": key})
+					before = vars(self.local).copy()
+					session = self.local.session.copy()
+					transition = self.transition('frappe.db.get_list("ToDo")')
+
+					def unavailable(*args, **kwargs):
+						raise PermissionError("isolated storage unavailable")
+
+					self.frappe.db.get_list = unavailable
+					permissions = sys.modules["frappe.permissions"]
+					with patch.object(
+						permissions,
+						"has_permission",
+						unavailable if failure == "permission" else self.permission,
+					):
+						try:
+							result = self.native["get_users_next_action_data"]([transition], self.doc)
+						except PermissionError:
+							self.fail(
+								"uncertain recipient permission must fail closed, not escape the lookup"
+							)
+						self.assertEqual(result, {})
+					self.assertEqual(vars(self.local), before)
+					for key, value in before.items():
+						self.assertIs(getattr(self.local, key), value)
+					self.assertEqual(self.local.session, session)
+
+	def test_success_restores_session_and_all_original_local_references(self):
+		before = vars(self.local).copy()
+		transition = self.transition("doc.assigned == frappe.session.user")
+		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {CHECKER})
+		self.assertEqual(vars(self.local), before)
+		for key, value in before.items():
+			self.assertIs(getattr(self.local, key), value)
+		self.assertEqual(
+			self.local.session, Row(user=MAKER, sid="original-sid", data=Row(audit="saving-session"))
+		)
+
+	def test_preserves_qualifying_role_index_without_current_holders(self):
+		self.holders.clear()
+		self.transition("")
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual([row.role for row in self.actions[0].permitted_roles], [ROLE])
+
+	def test_owner_withdraw_index_is_not_an_email_creator_rule(self):
+		self.holders[ROLE] = [MAKER]
+		transition = self.transition(
+			"doc.owner == frappe.session.user", action="Withdraw", allow_self_approval=1
+		)
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual(len(self.actions), 1)
+		self.assertEqual(self.native["get_users_next_action_data"]([transition], self.doc), {})
+		transition.send_email_to_creator = 1
+		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {MAKER})
+
+	def test_optional_state_stays_excluded_for_all_candidates(self):
+		self.transition("doc.assigned == frappe.session.user")
+		self.native["get_state_optional_field_value"] = lambda *args: True
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual(self.actions, [])
+
+	def test_self_approval_gate_is_preserved(self):
+		self.holders[ROLE] = [MAKER]
+		transition = self.transition("")
+		transition.send_email_to_creator = 1
+		self.assertEqual(self.native["get_users_next_action_data"]([transition], self.doc), {})
+		transition.allow_self_approval = 1
+		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {MAKER})
+
+	def test_retry_does_not_create_a_duplicate_action(self):
+		self.transition("doc.assigned == frappe.session.user")
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.native["process_workflow_actions"](self.doc, "on_update")
+		self.assertEqual(len(self.actions), 1)
+
+	def test_recipient_is_rechecked_after_reassignment_or_role_revocation(self):
+		transition = self.transition("doc.assigned == frappe.session.user")
+		self.doc.assigned = OTHER
+		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {OTHER})
+		self.holders[ROLE].remove(OTHER)
+		self.assertEqual(self.native["get_users_next_action_data"]([transition], self.doc), {})
 
 
 if __name__ == "__main__":
