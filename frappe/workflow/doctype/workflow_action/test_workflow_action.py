@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
+import frappe.permissions
 from frappe.query_builder.utils import get_query_builder
 from frappe.tests import IntegrationTestCase
 from frappe.utils.caching import request_cache
@@ -51,7 +52,9 @@ class TestWorkflowAction(IntegrationTestCase):
 				self.assertEqual(
 					frappe.db.get_list("ToDo", filters={"name": todo.name}, pluck="name"), expected
 				)
-				self.assertEqual(frappe.has_permission("ToDo", doc=todo, print_logs=False), bool(expected))
+				self.assertEqual(
+					frappe.permissions.has_permission("ToDo", doc=todo, print_logs=False), bool(expected)
+				)
 		rows = frappe.get_all(
 			"Workflow Action",
 			fields=["name", "modified_by"],
