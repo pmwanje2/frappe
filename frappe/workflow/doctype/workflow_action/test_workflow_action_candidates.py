@@ -14,6 +14,7 @@ import unittest
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -57,20 +58,24 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 			role_permissions={},
 			user_perms=object(),
 			request_cache=defaultdict(dict),
+			flags=Row(),
 		)
 		self.frappe = ModuleType("frappe")
 		self.frappe.local = self.local
 		self.frappe._dict = Row
 		self.frappe.whitelist = lambda **kwargs: lambda function: function
-		self.frappe.flags = Row()
 		self.frappe.in_test = True
 
 		# session is a live proxy in Frappe. Do not pin the original session here.
-		class Session:
-			def __getattr__(_self, key):
-				return getattr(self.local.session, key)
+		class LocalProxy:
+			def __init__(_self, field):
+				_self.field = field
 
-		self.frappe.session = Session()
+			def __getattr__(_self, key):
+				return getattr(getattr(self.local, _self.field), key)
+
+		self.frappe.session = LocalProxy("session")
+		self.frappe.flags = LocalProxy("flags")
 		self.frappe.utils = SimpleNamespace(
 			now_datetime=lambda: None,
 			add_to_date=lambda value: value,
@@ -109,6 +114,7 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 			"contextmanager": contextmanager,
 			"defaultdict": defaultdict,
 			"datetime": datetime,
+			"deepcopy": deepcopy,
 		}
 		functions(
 			"frappe/model/workflow.py",
@@ -330,6 +336,62 @@ class TestWorkflowActionCandidates(unittest.TestCase):
 				self.assertEqual(
 					set(self.native["get_users_next_action_data"](self.transitions, self.doc)), expected
 				)
+
+	def test_candidate_does_not_inherit_saver_permission_bypasses(self):
+		self.local.flags = Row(
+			ignore_permissions=True, ignore_user_permissions=True, ignore_user_permissions_for_doctype="ToDo"
+		)
+
+		def list_rows(*args, **kwargs):
+			if any(
+				self.frappe.flags.get(key)
+				for key in (
+					"ignore_permissions",
+					"ignore_user_permissions",
+					"ignore_user_permissions_for_doctype",
+				)
+			):
+				return ["forbidden broader scope"]
+			return [self.local.session.user]
+
+		self.frappe.db.get_list = list_rows
+		transition = self.transition('frappe.db.get_list("ToDo") == [doc.assigned]')
+		self.assertEqual(set(self.native["get_users_next_action_data"]([transition], self.doc)), {CHECKER})
+		self.assertTrue(self.frappe.flags.ignore_permissions)
+
+	def test_candidate_diagnostic_mutations_are_isolated_on_success_and_error(self):
+		for fail in (False, True):
+			for logs_present in (False, True):
+				with self.subTest(error=fail, logs_present=logs_present):
+					self.local.flags = Row(candidate_diagnostics=["saving"])
+					for key in ("message_log", "permission_debug_log"):
+						if logs_present:
+							setattr(self.local, key, ["saving"])
+						elif hasattr(self.local, key):
+							delattr(self.local, key)
+					before = vars(self.local).copy()
+
+					def list_rows(*args, **kwargs):
+						self.local.flags.candidate_diagnostics.append(self.local.session.user)
+						self.local.message_log.append("private candidate message")
+						self.local.permission_debug_log.append("private candidate debug")
+						if fail:
+							raise PermissionError("isolated query denied")
+						return [self.local.session.user]
+
+					self.frappe.db.get_list = list_rows
+					transition = self.transition('frappe.db.get_list("ToDo") == [doc.assigned]')
+					self.assertEqual(
+						set(self.native["get_users_next_action_data"]([transition], self.doc)),
+						set() if fail else {CHECKER},
+					)
+					self.assertEqual(set(vars(self.local)), set(before))
+					for key, value in before.items():
+						self.assertIs(getattr(self.local, key), value)
+					self.assertEqual(self.local.flags.candidate_diagnostics, ["saving"])
+					if logs_present:
+						self.assertEqual(self.local.message_log, ["saving"])
+						self.assertEqual(self.local.permission_debug_log, ["saving"])
 
 
 if __name__ == "__main__":
