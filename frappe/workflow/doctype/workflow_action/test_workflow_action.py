@@ -28,12 +28,15 @@ class TestWorkflowAction(IntegrationTestCase):
 		self.addCleanup(frappe.delete_doc, "Workflow", workflow.name)
 		for name in ("test2@example.com", "test3@example.com"):
 			user = frappe.get_doc("User", name)
-			self.assertEqual(user.user_type, "System User")
 			prior_roles = {row.role for row in user.roles}
 			self.assertNotIn("System Manager", prior_roles)
 			user.add_roles("Test Approver")
 			if "Test Approver" not in prior_roles:
 				self.addCleanup(user.remove_roles, "Test Approver")
+			user.reload()
+			self.assertTrue(user.enabled)
+			self.assertEqual(user.user_type, "System User")
+			self.assertNotIn("System Manager", {row.role for row in user.roles})
 		workflow.send_email_alert = 0
 		for transition in workflow.transitions:
 			transition.allowed = "Test Approver"
@@ -126,12 +129,15 @@ class TestWorkflowAction(IntegrationTestCase):
 		self.addCleanup(frappe.delete_doc, "Workflow", workflow.name)
 		for name in ("test2@example.com", "test3@example.com"):
 			user = frappe.get_doc("User", name)
-			self.assertEqual(user.user_type, "System User")
 			prior_roles = {row.role for row in user.roles}
 			self.assertNotIn("System Manager", prior_roles)
 			user.add_roles("Test Approver")
 			if "Test Approver" not in prior_roles:
 				self.addCleanup(user.remove_roles, "Test Approver")
+			user.reload()
+			self.assertTrue(user.enabled)
+			self.assertEqual(user.user_type, "System User")
+			self.assertNotIn("System Manager", {row.role for row in user.roles})
 		workflow.send_email_alert = 0
 		for transition in workflow.transitions:
 			transition.condition = (
