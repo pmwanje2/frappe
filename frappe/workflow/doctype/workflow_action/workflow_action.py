@@ -9,6 +9,7 @@ from frappe.desk.form.utils import get_pdf_link
 from frappe.desk.notifications import clear_doctype_notifications
 from frappe.model.document import Document
 from frappe.model.workflow import (
+	_workflow_candidate_context,
 	apply_workflow,
 	get_workflow_name,
 	get_workflow_state_field,
@@ -104,7 +105,9 @@ def process_workflow_actions(doc, state):
 	update_completed_workflow_actions(doc, workflow=workflow, workflow_state=get_doc_workflow_state(doc))
 	clear_doctype_notifications("Workflow Action")
 
-	next_possible_transitions = get_next_possible_transitions(workflow, get_doc_workflow_state(doc), doc)
+	next_possible_transitions = get_next_possible_transitions(
+		workflow, get_doc_workflow_state(doc), doc, include_candidate_transitions=True
+	)
 
 	if not next_possible_transitions:
 		return
@@ -314,40 +317,90 @@ def update_completed_workflow_actions_using_role(user=None, workflow_action=None
 	).run()
 
 
-def get_next_possible_transitions(workflow_name, state, doc=None):
+def get_next_possible_transitions(workflow_name, state, doc=None, *, include_candidate_transitions=False):
+	"""Retain actor-qualified edges; optionally add eligible candidates' edges for indexing."""
 	transitions = frappe.get_all(
 		"Workflow Transition",
-		fields=["allowed", "action", "state", "allow_self_approval", "next_state", "condition"],
+		fields=[
+			"allowed",
+			"action",
+			"state",
+			"allow_self_approval",
+			"next_state",
+			"condition",
+			"send_email_to_creator",
+		],
 		filters=[["parent", "=", workflow_name], ["state", "=", state]],
 	)
 
 	transitions_to_return = []
+	role_users = {}
 
 	for transition in transitions:
 		is_next_state_optional = get_state_optional_field_value(workflow_name, transition.next_state)
 		# skip transition if next state of the transition is optional
 		if is_next_state_optional:
 			continue
-		if not is_transition_condition_satisfied(transition, doc):
-			continue
+		try:
+			condition_satisfied = is_transition_condition_satisfied(transition, doc)
+		except Exception:
+			if not include_candidate_transitions:
+				raise
+			condition_satisfied = False
+		if not condition_satisfied:
+			if not include_candidate_transitions:
+				continue
+			try:
+				if transition.allowed not in role_users:
+					role_users[transition.allowed] = frozenset(get_users_with_role(transition.allowed))
+				users = role_users[transition.allowed]
+				candidate_eligible = any(
+					is_workflow_action_candidate(user, doc, transition, _role_users=users) for user in users
+				)
+			except Exception:
+				candidate_eligible = False
+			if not candidate_eligible:
+				continue
 		transitions_to_return.append(transition)
 
 	return transitions_to_return
 
 
+def is_workflow_action_candidate(user, doc, transition, *, _role_users=None) -> bool:
+	"""Check a candidate, optionally reusing this invocation's native roster snapshot.
+
+	The private roster is supplied only by the native batch callers below/above;
+	direct calls read current enabled membership. Neither grants execution rights.
+	"""
+	from frappe.permissions import has_permission
+
+	try:
+		with _workflow_candidate_context(user):
+			users = get_users_with_role(transition.allowed) if _role_users is None else _role_users
+			return bool(
+				user in users
+				and has_permission(doctype=doc, user=user, print_logs=False)
+				and has_approval_access(user, doc, transition)
+				and is_transition_condition_satisfied(transition, doc)
+			)
+	except Exception:
+		# Uncertain role, permission or condition evaluation cannot grant an offer.
+		return False
+
+
 def get_users_next_action_data(transitions, doc):
 	user_data_map = {}
-
-	@frappe.request_cache
-	def user_has_permission(user: str) -> bool:
-		from frappe.permissions import has_permission
-
-		return has_permission(doctype=doc, user=user)
+	role_users = {}
 
 	for transition in transitions:
-		users = get_users_with_role(transition.allowed)
+		try:
+			if transition.allowed not in role_users:
+				role_users[transition.allowed] = frozenset(get_users_with_role(transition.allowed))
+			users = role_users[transition.allowed]
+		except Exception:
+			continue
 		filtered_users = [
-			user for user in users if has_approval_access(user, doc, transition) and user_has_permission(user)
+			user for user in users if is_workflow_action_candidate(user, doc, transition, _role_users=users)
 		]
 		if doc.get("owner") in filtered_users and not transition.get("send_email_to_creator"):
 			filtered_users.remove(doc.get("owner"))

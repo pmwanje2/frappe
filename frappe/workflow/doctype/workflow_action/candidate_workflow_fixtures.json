@@ -1,0 +1,477 @@
+{
+	"scope": "Synthetic regression patterns only; no customer configuration or deployment evidence.",
+	"platform_baselines": {
+		"baseline_a": {
+			"name": "Synthetic Baseline 1",
+			"document_type": "Review Type I",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Rejected",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Draft",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reference Reviewer",
+					"allow_self_approval": 0,
+					"condition": "(doc.has_reference and (doc.reference_code != \"UNSET\" or \"Kind A\" in (doc.side_a, doc.side_b))) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Draft",
+					"action": "Reject",
+					"next_state": "Rejected",
+					"allowed": "Test Reference Reviewer",
+					"allow_self_approval": 0,
+					"condition": ""
+				},
+				{
+					"state": "Draft",
+					"action": "Reject",
+					"next_state": "Rejected",
+					"allowed": "Test Owner Reviewer",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				},
+				{
+					"state": "Draft",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Owner Reviewer",
+					"allow_self_approval": 1,
+					"condition": "(doc.has_reference and (doc.reference_code != \"UNSET\" or \"Kind A\" in (doc.side_a, doc.side_b))) and doc.owner == frappe.session.user"
+				}
+			]
+		},
+		"baseline_b": {
+			"name": "Synthetic Baseline 2",
+			"document_type": "Review Type J",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Draft",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Stock Reviewer",
+					"allow_self_approval": 0,
+					"condition": "doc.owner == frappe.session.user or doc.modified_by != frappe.session.user"
+				}
+			]
+		},
+		"baseline_c": {
+			"name": "Synthetic Baseline 3",
+			"document_type": "Review Type K",
+			"states": [
+				{
+					"state": "Pending Review",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Rejected",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending Review",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Quality Reviewer",
+					"allow_self_approval": 0,
+					"condition": "(doc.submitted_by or doc.owner) != frappe.session.user"
+				},
+				{
+					"state": "Pending Review",
+					"action": "Reject",
+					"next_state": "Rejected",
+					"allowed": "Test Quality Reviewer",
+					"allow_self_approval": 0,
+					"condition": ""
+				},
+				{
+					"state": "Pending Review",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Owner Reviewer",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				},
+				{
+					"state": "Pending Review",
+					"action": "Reject",
+					"next_state": "Rejected",
+					"allowed": "Test Owner Reviewer",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				}
+			]
+		}
+	},
+	"no_workflow_patterns": {
+		"cell_g": [],
+		"cell_h": []
+	},
+	"pattern_cells": [
+		"cell_a",
+		"cell_b",
+		"cell_c",
+		"cell_d",
+		"cell_e",
+		"cell_f",
+		"cell_g",
+		"cell_h"
+	],
+	"owner_cases": [
+		{
+			"name": "Synthetic Review A",
+			"document_type": "Review Type A",
+			"states": [
+				{
+					"state": "Pending Approval",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending Approval",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "True and 0 < (frappe.db.get_value('Test Policy', doc.group_b, 'limit_b') or 0) and doc.amount_a <= (frappe.db.get_value('Test Policy', doc.group_b, 'limit_b') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Pending Approval",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "True and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name')))"
+				}
+			]
+		},
+		{
+			"name": "Synthetic Review B",
+			"document_type": "Review Type B",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 1
+				},
+				{
+					"state": "Pending",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "not (doc.kind == 'Blocked' or doc.blocked_amount) and 0 < (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and doc.amount_d <= (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user) and not [entry for entry in doc.entries if frappe.db.get_value('Test Lookup', entry.key, 'category') == 'Blocked']"
+				},
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "not (doc.kind == 'Blocked' or doc.blocked_amount) and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name'))) and not [entry for entry in doc.entries if frappe.db.get_value('Test Lookup', entry.key, 'category') == 'Blocked']"
+				},
+				{
+					"state": "Pending",
+					"action": "Withdraw",
+					"next_state": "Draft",
+					"allowed": "Test Editor",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				}
+			]
+		},
+		{
+			"name": "Synthetic Review C",
+			"document_type": "Review Type C",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 1
+				},
+				{
+					"state": "Pending",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "not (doc.adjustment_amount or doc.adjustments) and 0 < (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and doc.amount_c <= (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "not (doc.adjustment_amount or doc.adjustments) and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name')))"
+				},
+				{
+					"state": "Pending",
+					"action": "Withdraw",
+					"next_state": "Draft",
+					"allowed": "Test Editor",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				}
+			]
+		},
+		{
+			"name": "Synthetic Review D",
+			"document_type": "Review Type D",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 1
+				},
+				{
+					"state": "Pending",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "not doc.blocked_amount and 0 < (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and doc.amount_b <= (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "not doc.blocked_amount and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name')))"
+				},
+				{
+					"state": "Pending",
+					"action": "Withdraw",
+					"next_state": "Draft",
+					"allowed": "Test Editor",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				}
+			]
+		},
+		{
+			"name": "Synthetic Review E",
+			"document_type": "Review Type E",
+			"states": [
+				{
+					"state": "Pending",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "True and 0 < (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and doc.amount_b <= (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "True and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name')))"
+				}
+			]
+		},
+		{
+			"name": "Synthetic Review F",
+			"document_type": "Review Type F",
+			"states": [
+				{
+					"state": "Draft",
+					"is_optional_state": 1
+				},
+				{
+					"state": "Pending",
+					"is_optional_state": 0
+				},
+				{
+					"state": "Approved",
+					"is_optional_state": 0
+				}
+			],
+			"transitions": [
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Reviewer",
+					"allow_self_approval": 0,
+					"condition": "not doc.blocked_amount and 0 < (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and doc.amount_b <= (frappe.db.get_value('Test Policy', doc.group_a, 'limit_a') or 0) and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+				},
+				{
+					"state": "Pending",
+					"action": "Approve",
+					"next_state": "Approved",
+					"allowed": "Test Self Approver",
+					"allow_self_approval": 1,
+					"condition": "not doc.blocked_amount and (frappe.db.get_value('Has Role', {'parent': doc.owner, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name') or (doc.owner == 'Administrator' and doc.modified_by == frappe.session.user and frappe.db.get_value('Has Role', {'parent': doc.modified_by, 'parenttype': 'User', 'role': 'Test Self Approver'}, 'name')))"
+				},
+				{
+					"state": "Pending",
+					"action": "Withdraw",
+					"next_state": "Draft",
+					"allowed": "Test Editor",
+					"allow_self_approval": 1,
+					"condition": "doc.owner == frappe.session.user"
+				}
+			]
+		}
+	],
+	"scoped_release": {
+		"name": "Synthetic Scoped Review",
+		"document_type": "Review Type G",
+		"states": [
+			{
+				"state": "Pending Release",
+				"is_optional_state": 0
+			},
+			{
+				"state": "Approved",
+				"is_optional_state": 0
+			},
+			{
+				"state": "Cancelled",
+				"is_optional_state": 1
+			}
+		],
+		"transitions": [
+			{
+				"state": "Pending Release",
+				"action": "Release",
+				"next_state": "Approved",
+				"allowed": "Test Release Reviewer",
+				"allow_self_approval": 0,
+				"condition": "doc.request_kind in ('Kind A', 'Kind B', 'Kind C', 'Kind D', 'Kind E') and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+			},
+			{
+				"state": "Pending Release",
+				"action": "Release",
+				"next_state": "Approved",
+				"allowed": "Test Alternate Reviewer",
+				"allow_self_approval": 0,
+				"condition": "doc.request_kind in ('Kind A', 'Kind B', 'Kind C', 'Kind D', 'Kind E') and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+			},
+			{
+				"state": "Pending Release",
+				"action": "Reject",
+				"next_state": "Cancelled",
+				"allowed": "Test Release Reviewer",
+				"allow_self_approval": 0,
+				"condition": "doc.request_kind in ('Kind A', 'Kind B', 'Kind C', 'Kind D', 'Kind E') and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+			},
+			{
+				"state": "Pending Release",
+				"action": "Reject",
+				"next_state": "Cancelled",
+				"allowed": "Test Alternate Reviewer",
+				"allow_self_approval": 0,
+				"condition": "doc.request_kind in ('Kind A', 'Kind B', 'Kind C', 'Kind D', 'Kind E') and (doc.owner == frappe.session.user or doc.modified_by != frappe.session.user)"
+			}
+		]
+	},
+	"optional_release": {
+		"name": "Synthetic Optional Review",
+		"document_type": "Review Type H",
+		"states": [
+			{
+				"state": "Pending Release",
+				"is_optional_state": 0
+			},
+			{
+				"state": "Approved",
+				"is_optional_state": 0
+			},
+			{
+				"state": "Cancelled",
+				"is_optional_state": 1
+			}
+		],
+		"transitions": [
+			{
+				"state": "Pending Release",
+				"action": "Release",
+				"next_state": "Approved",
+				"allowed": "Test Releaser",
+				"allow_self_approval": 0,
+				"condition": ""
+			},
+			{
+				"state": "Pending Release",
+				"action": "Reject",
+				"next_state": "Cancelled",
+				"allowed": "Test Releaser",
+				"allow_self_approval": 0,
+				"condition": ""
+			}
+		]
+	}
+}

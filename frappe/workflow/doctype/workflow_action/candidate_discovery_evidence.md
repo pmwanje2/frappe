@@ -1,0 +1,261 @@
+# Workflow candidate discovery #5967 — source qualification
+
+Base: `62dfbccf105c2e776f197d98b4c558809232c577`, MIT.
+Branch: `fix/workflow-candidate-discovery-5967`.
+
+## RED, before any production change
+
+Interpreter: Python 3.12.3, stdlib source-function execution only.
+Command: `python3 frappe/workflow/doctype/workflow_action/test_workflow_action_candidates.py -v`
+
+Actual function bodies are compiled from this checkout. This is behavioral
+execution, not AST assertions, but storage, permission and expression boundaries
+are doubles. It is NOT imported-native or native DB integration proof.
+
+Result: `Ran 2 tests`, `FAILED (failures=2)`; zero errors/skips.
+
+```
+test_creation_adds_candidate_edge_when_saver_condition_is_false ... FAIL
+AssertionError: 0 != 1 : assigned candidate must receive native role indexing
+
+test_recipients_recheck_condition_for_each_candidate ... FAIL
+AssertionError: Items in the first set but not the second:
+'other@example.test' : unassigned role holder must not receive an action
+```
+
+An initial harness setup error (missing Callable binding) was corrected before
+these behavioral failures. It is not counted as RED evidence.
+
+Native Python 3.14 units await a separately approved isolated runner. Native DB
+integration remains CANNOT-VERIFY without the correct carrier and fresh lab.
+SiteOps custom `valid_until` expiry is NOT a native 62df role API contract and
+remains separately unqualified; no read-time sweep or new provider is introduced.
+No deployment, image adoption, production execution, push or PR is authorized.
+
+## Additional test-only commit, still before production changes
+
+Same offline command/interpreter: 12 tests, 11 failing assertions (including
+subtests), zero errors/skips. Five preservation methods pass on the base.
+Failures now cover candidate conditions, request-cache isolation, fail-closed
+permission/expression errors, reassignment and candidate-edge retries.
+
+The existing native test module additionally contains five imported-module,
+site-free unit tests and one fresh-lab integration test. Neither has run yet.
+`run_candidate_units.sh` and `candidate_unit_runner.py` define the two-run-max
+RED/GREEN container plan; execution requires root's final source-head/hash ACK.
+Normal hooks were inspected: only sample Git hooks are installed and no
+`core.hooksPath` is configured; pre-commit is unavailable. No hooks are bypassed.
+Ruff 0.16.4 from the existing qualified SiteOps venv checks/formats changed
+Python paths; `bash -n` checks the test-only container launcher.
+
+## Approved imported-native source-unit run 1 of 2
+
+Frozen head: `66ce81dcb302c50324770a15717d95f45c9e1e3f`.
+Launcher SHA256: `2174d7dfc2b95a0683104b7563aa87a45ebd85b22e6c8b02ce3732a22466479e`.
+Command: `bash frappe/workflow/doctype/workflow_action/run_candidate_units.sh 66ce81dcb302c50324770a15717d95f45c9e1e3f`.
+Interpreter: Python 3.14.7. Both production modules imported from `/candidate`;
+all eight supplied source hashes verified, including unchanged 62df workflow
+and workflow_action hashes recorded in the RCA.
+
+Selected: `TestWorkflowActionCandidateUnits`, 5 tests, 0 passed, 0 behavioral
+failures, 5 errors, 0 skipped; exit 1. **CANNOT-VERIFY, not behavioral RED**.
+Lazy safe_exec/PDF import attempted `/logs/cssutils.log` while working at `/tmp`;
+no retries, dependency installation or guard relaxation performed.
+
+Raw output: `/tmp/frappe-workflow5967-units.lX8E3j/units.log`, 308 lines,
+SHA256 `29d0ae53f6c2582225d7bf43a3f5a16a9873519763e6e33476508968e074d70d`.
+CID: `89d5bb73c649455809527130c1a0a629ba798681eb0f103ae4b45336943d3f31`.
+Docker `--rm` removed it; separate bounded exact-CID inspection returned
+`No such container`. No container removal beyond the approved run was needed.
+The launcher trap stopped before its own readback because `read` on Docker's
+newline-free CID file returns nonzero under `set -e`. The approved launcher
+remains unchanged for root inspection. Run 2 needs a new frozen-head/script ACK.
+
+Further pre-implementation tests exercise independently literal actor exclusions
+and creator-email flag propagation through native discovery's field projection.
+
+## Root-approved runner correction, test-only
+
+Native logging configuration is `FRAPPE_STREAM_LOGGING=1` inside `env -i`;
+CID reading explicitly accepts a nonempty EOF-terminated CID before validating
+the same 64-hex format and enforcing unchanged name/label ownership checks.
+No masks, bounds, startup guards or test assertions are loosened.
+
+Root explicitly amended the source-unit budget: failed setup run 1 is preserved;
+at most two additional runs may qualify corrected RED and GREEN (three total).
+Each requires root's exact frozen-head/script ACK; another environment failure
+must stop without retry. No additional run has occurred at this commit.
+
+A minimum uncommitted implementation briefly passed the 14 SOURCE methods
+before this revised ordering arrived; it was removed completely. Both production
+files are again byte-identical to 62df before this test-only runner commit.
+
+Before corrected RED was run, inspection identified native metadata boundaries
+missing from the imported-unit fixture: `client_cache` supplies the child-table
+list, local System Settings supplies the strict-permission flag, and an empty
+list-query/translation store completes the isolated metadata world. These are
+memory-only storage fixtures; no native role/permission logic or assertions are
+replaced or weakened. The launcher/startup guard remain unchanged.
+
+## Source review preconditions, before corrected native RED
+
+The fresh-lab integration test no longer grants System Manager. Both candidates
+are ordinary System Users with Test Approver; ToDo `allocated_to` distinguishes
+candidate A's read/list access from candidate B's refusal. Administrator is only
+the bootstrap/saving principal. Real DB integration has NOT run.
+
+New SOURCE negatives require the candidate context to exclude inherited
+permission-bypass flags and isolate nested flags plus `message_log` and
+`permission_debug_log`, restoring references, values and original absence on
+success and query errors. The imported-native unit class now has six methods;
+its new diagnostic case preserves the same checks with native permission code
+and memory-only storage.
+
+The unchanged offline command runs 16 methods: 20 failing assertions including
+subtests, zero errors/skips on unchanged 62df production. This is SOURCE RED,
+not real permission-query or imported-native proof. No container run followed
+the initial failed setup run. A subsequent ACK for the older b696dca527 head
+cannot authorize executing these changed tests; a new exact-head ACK is needed.
+
+## Corrected imported-native RED, approved run 2 of 3
+
+Frozen RED: `2ac9e4cd0c6883b8bd23e8a092e0cb245f0f6743`.
+Launcher: `4804011c699d61c95dadf30cce8ce9a9e6f356f0cf97340cf8678671867f8906`.
+Command: `bash frappe/workflow/doctype/workflow_action/run_candidate_units.sh 2ac9e4cd0c6883b8bd23e8a092e0cb245f0f6743`.
+Python 3.14.7; all source hashes verified and both framework modules imported
+from `/candidate`. Selected exactly `TestWorkflowActionCandidateUnits`, six
+methods: **1 passed, 5 behavioral failures, 0 errors, 0 skips**, exit 1.
+
+The failures demonstrate unassigned recipients, permission-denied target with
+another condition-ineligible role holder, warm-cache/candidate-context errors,
+bypass/diagnostic isolation and escaping role-read failure. Disabled/revoked
+membership through the native role API already passes.
+
+Full raw output: `/tmp/frappe-workflow5967-units.35P4CA/units.log`, 102 lines,
+SHA256 `6f05a0847f859d8987c63ed33cb2b07e7f989d296bc80da320cf1b8dc2b45fd0`.
+CID `cec611ca007762ce7f6830dc3d797179b132dfc5ecf57e8ce778a7c823782e76`;
+launcher verified absence and printed `CONTAINER_ABSENT UNIT_EXIT=1`.
+No integration class, site initialization, actual DB, ERPNext, network or
+production target was used. This is imported-native source-unit evidence only.
+
+## Minimum SOURCE GREEN, separate production commit
+
+The same offline command on Python 3.12.3 now passes all 16 methods (including
+their preservation/security subtests), zero failures/errors/skips. Assertions
+are unchanged from the committed RED tests. Ruff 0.16.4 checks/formats all five
+affected Python paths; `git diff --check` passes.
+
+Only `model/workflow.py` and native `workflow_action.py` change production
+behavior: a bounded private context, one shared candidate predicate, additive
+opt-in discovery for creation, and candidate rechecking for native email.
+Discovery also carries the existing `send_email_to_creator` field so native
+creator email policy is not lost in its projection. Existing qualifying edges
+remain indexed without a current holder; creator email filtering is separate.
+
+AST comparison against 62df confirms unchanged native `get_transitions`,
+`apply_workflow`, `has_approval_access`, condition evaluation and safe globals.
+This comparison is authority-preservation evidence, NOT integration execution.
+Custom SiteOps expiry and fresh-lab DB/all-tenant integration remain unqualified.
+
+## Imported-native GREEN at exact 0800, approved final run 3
+
+Qualified source: `0800bc5eb6e0d52a70ca8931414a0555f4220197`.
+Python 3.14.7, six selected imported-native unit methods passed, zero
+failures/errors/skips, exit 0. Native DB integration was NOT selected or run.
+Launcher readback printed `CONTAINER_ABSENT UNIT_EXIT=0`.
+Raw output `/tmp/frappe-workflow5967-units.0NdYHh/units.log`, SHA256
+`83ef22b12610666c11cc798501be349659144b48c756b9700408f4cc845c036f`.
+SOURCE tests at that head: 16 passed, zero failures/errors/skips; raw output
+`/tmp/frappe-workflow5967-units.0NdYHh/source-units.log`, SHA256
+`4b9e10b7369565d4ba53375465505ccfdbf004f3b4b90f7a9e4714250b1c85d1`.
+All three authorized container runs are consumed. No additional run is granted.
+
+## Grok AMEND, test-only before roster optimization
+
+Static review found the unexecuted integration test passed `print_logs=False`
+to frappe's convenience wrapper, which does not support that keyword. It now
+calls `frappe.permissions.has_permission` directly with unchanged ordinary-user
+A-read/B-denied assertions. The previous six-unit success did not qualify that
+real-DB integration test; its execution remains CANNOT-VERIFY.
+
+Context restoration is bounded to the twelve named session/cache/flags/log
+keys, not every possible lazy local. For example, native permissions may create
+`system_settings` outside that set. No caller-identity leak was established;
+no broad local-context framework is added or claimed.
+
+Before any optimization, the offline command on Python 3.12.3 runs 19 methods:
+17 passed, two genuine query-count failures, zero errors/skips. Native discovery
+reads a shared two-candidate/two-edge roster four times instead of once;
+recipients read it six times instead of once. Direct predicate revocation
+rechecking already passes. Both new tests also require a fresh roster on the
+next invocation. They are committed RED before changing production reuse.
+
+## Invocation-local roster SOURCE GREEN
+
+Query-count RED/test-only AMEND commit:
+`83684f1e7310611e4680fbab4854e18ff8ba955c`.
+The separate minimum production change stores each successful native enabled,
+non-Administrator, explicit-membership roster as an immutable set in a local
+dictionary inside the discovery/recipient invocation. No global/request cache,
+provider, hook, grant, expiry policy or read-time sweep is introduced.
+
+Batch callers pass that native roster to the single predicate through private
+keyword `_role_users`; existing three-positional-argument calls still perform
+their own fresh native roster read. All document-permission, approval-access
+and condition checks still execute in candidate context for each offer. The
+roster is re-read on the next invocation, including after revocation. This is
+an invocation snapshot, not a guarantee of observing a concurrent revocation
+partway through the same batch; actual transition authority is unchanged.
+
+The unchanged SOURCE command on Python 3.12.3 now passes all 19 methods and
+their subtests, zero failures/errors/skips. For the two-edge shared-role case,
+discovery roster reads fall from four to one and native-recipient reads from
+six to one. These are memory-boundary query counts, not DB latency benchmarks.
+The context docstring now explicitly limits restoration to the known keys.
+Ruff 0.16.4 and formatting checks pass; `git diff --check` passes.
+
+No new container run was performed or authorized. Imported-native six-unit
+GREEN remains qualified only at 0800; it is NOT carried forward as a pass for
+these later test/optimization revisions. Real DB integration, full tenant
+qualification, custom expiry and independent review of this new head remain
+unperformed/pending. No push, PR, deployment or production operation occurred.
+
+## Additional synthetic regression coverage (test-only)
+
+The prior approved exact-76 source qualification was 19 offline SOURCE methods
+and 6 imported Python 3.14.7 units, zero failures/errors/skips. Historical
+0800-only language above is superseded by that exact-76 receipt; those imported
+results are not relabeled as qualification of this later test-only revision.
+
+The existing offline test file now contains 29 passing methods: all original
+19 method ASTs unchanged, plus 10 synthetic regression methods with finite
+subtests. Command: `python3 frappe/workflow/doctype/workflow_action/test_workflow_action_candidates.py -v`.
+Python 3.12.3, zero failures/errors/skips. Ruff lint/format and diff whitespace
+checks pass. Production modules and the container launcher/guard are unchanged.
+
+Public fixtures contain synthetic roles, fields, document types, abstract
+pattern-cell identifiers and small artificial values only. No customer
+configuration, staff identity, source registry/revision or private policy
+mapping is included. These are generic regression patterns, not execution or
+qualification of any tenant's configured workflows.
+
+Covered patterns: role-qualified human-owner and system-owner forwarding;
+different-forwarder/editor refusal; ordinary review limits and exceptional
+value/list refusals; scoped release/reject refusals; mixed optional and
+nonoptional destinations; saver-qualified versus candidate-only edges without
+holders; native workflow/state/creator email flags, enqueue suppression,
+eligible owner/editor recipients and resave dedupe; generic single-reviewer,
+four-eyes and no-workflow platform baselines. Native function bodies execute;
+storage, queue, permission and mail transport boundaries remain doubles.
+
+The new integration lifecycle method uses existing ToDo/workflow fixtures and
+native apply/save/completion hooks. It asserts persisted Open/Completed/reentry,
+fresh task identity, completion actor/role and unauthorized-action refusal.
+It is AUTHORED ONLY, NOT RUN, and is not selected by the SOURCE unit file.
+Both real-DB integration methods, real email delivery, all-tenant outcomes,
+custom expiry and fresh-bench adoption remain CANNOT-VERIFY.
+
+This coverage-only amendment found no new production defect and introduces no
+production change or new RED/GREEN claim. Independent review must refresh at
+the new exact test-only head. No container run, push, pin or runtime action was
+performed or newly authorized.
