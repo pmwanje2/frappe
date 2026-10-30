@@ -409,19 +409,24 @@ def get_doc_for_response(doc: "Document", *, as_dict: bool = False) -> "Document
 	"""Filter a response copy without changing the document retained by save hooks."""
 	response_doc = deepcopy(doc)
 	response_doc.apply_fieldlevel_read_permissions()
-	return _filtered_response_dict(response_doc) if as_dict else response_doc
+	return _filtered_response_dict(response_doc, doc) if as_dict else response_doc
 
 
-def _filtered_response_dict(doc: "Document") -> dict:
+def _filtered_response_dict(doc: "Document", original: "Document") -> dict:
 	data = doc.as_dict()
 	# as_dict restores deleted fields as null/default values. Omit only fields
 	# removed by the native filter, preserving readable nulls and numeric types.
 	for df in doc.meta.fields:
-		if df.permlevel and df.fieldname in data and not hasattr(doc, df.fieldname):
-			data.pop(df.fieldname)
+		if df.permlevel and df.fieldname in original.__dict__ and df.fieldname not in doc.__dict__:
+			data.pop(df.fieldname, None)
 	for df in doc.meta.get_table_fields(include_computed=True):
 		if df.fieldname in data:
-			data[df.fieldname] = [_filtered_response_dict(child) for child in doc.get(df.fieldname) or []]
+			data[df.fieldname] = [
+				_filtered_response_dict(child, original_child)
+				for child, original_child in zip(
+					doc.get(df.fieldname) or [], original.get(df.fieldname) or [], strict=True
+				)
+			]
 	return data
 
 
