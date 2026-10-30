@@ -182,7 +182,7 @@ def create_doc(doctype: str):
 	if (name := data.get("name")) and isinstance(name, str | int):
 		doc.flags.name_set = True
 
-	return get_doc_for_response(doc.insert()).as_dict(no_nulls=True)
+	return get_doc_for_response(doc.insert(), as_dict=True)
 
 
 def copy_doc(doctype: str, name: str, ignore_no_copy: bool = True):
