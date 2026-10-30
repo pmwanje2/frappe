@@ -230,7 +230,10 @@ class TestWriteResponsePermissions(unittest.TestCase):
 					self.assertIn("optional_comment", result)
 					self.assertIsNone(result["optional_comment"])
 
-	def test_dictionary_child_fields_are_omitted_without_mutating_saved_rows(self):
+	def test_parent_and_child_fields_are_omitted_without_mutating_saved_rows(self):
+		count = frappe._dict(fieldname="private_count", fieldtype="Int", permlevel=1)
+		self.meta.fields.append(count)
+		self.meta._fields[count.fieldname] = count
 		table = frappe._dict(fieldname="rows", fieldtype="Table", options="Test Response Child", permlevel=0)
 		self.meta.fields.append(table)
 		self.meta._fields["rows"] = table
@@ -255,7 +258,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			"get_meta",
 			side_effect=lambda doctype: child_meta if doctype == table.options else self.meta,
 		):
-			for endpoint in (*ENDPOINTS[:5], "v2.create_doc"):
+			for endpoint in ENDPOINTS:
 				with self.subTest(endpoint=endpoint):
 					child = Document.__new__(Document)
 					child.flags = frappe._dict()
@@ -270,12 +273,22 @@ class TestWriteResponsePermissions(unittest.TestCase):
 						),
 					)
 					doc = self.new_document()
+					doc.private_count = 42
 					doc.rows = [child]
 					with patch.object(self, "new_document", return_value=doc):
 						result = self.run_endpoint(endpoint)
 					self.assertEqual(child.private_analysis, PRIVATE)
 					self.assertEqual(child.private_count, 42)
-					self.assertEqual(result["rows"], [{"doctype": table.options, "public_null": None}])
+					self.assertEqual(self.saved.private_count, 42)
+					self.assertEqual(self.stored["private_count"], 42)
+					self.assertEqual(self.stored["rows"][0]["private_count"], 42)
+					row = {"doctype": table.options}
+					if endpoint in (*ENDPOINTS[:5], "v2.create_doc"):
+						row["public_null"] = None
+					self.assertEqual(
+						{"parent_count": result.get("private_count", "omitted"), "rows": result["rows"]},
+						{"parent_count": "omitted", "rows": [row]},
+					)
 
 	def test_virtual_field_uses_native_readable_fieldnames(self):
 		field = frappe._dict(fieldname="private_virtual", fieldtype="Data", is_virtual=1, permlevel=1)
