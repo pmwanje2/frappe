@@ -405,15 +405,17 @@ def get_doc_permission_check(doc: "Document", check_permission: str | bool | Non
 	return doc
 
 
-def get_doc_for_response(doc: "Document", *, as_dict: bool = False) -> "Document | dict":
+def get_doc_for_response(doc: "Document", *, as_dict: bool = False) -> dict:
 	"""Filter a response copy without changing the document retained by save hooks."""
 	response_doc = deepcopy(doc)
 	response_doc.apply_fieldlevel_read_permissions()
-	return _filtered_response_dict(response_doc, doc) if as_dict else response_doc
+	# Match __json__ for Document-returning endpoints, retaining nulls only where
+	# the endpoint previously called as_dict() explicitly.
+	data = response_doc.as_dict(no_nulls=not as_dict)
+	return _filtered_response_dict(response_doc, doc, data)
 
 
-def _filtered_response_dict(doc: "Document", original: "Document") -> dict:
-	data = doc.as_dict()
+def _filtered_response_dict(doc: "Document", original: "Document", data: dict) -> dict:
 	# as_dict restores deleted fields as null/default values. Omit only fields
 	# removed by the native filter, preserving readable nulls and numeric types.
 	for df in doc.meta.fields:
@@ -422,9 +424,12 @@ def _filtered_response_dict(doc: "Document", original: "Document") -> dict:
 	for df in doc.meta.get_table_fields(include_computed=True):
 		if df.fieldname in data:
 			data[df.fieldname] = [
-				_filtered_response_dict(child, original_child)
-				for child, original_child in zip(
-					doc.get(df.fieldname) or [], original.get(df.fieldname) or [], strict=True
+				_filtered_response_dict(child, original_child, child_data)
+				for child, original_child, child_data in zip(
+					doc.get(df.fieldname) or [],
+					original.get(df.fieldname) or [],
+					data[df.fieldname],
+					strict=True,
 				)
 			]
 	return data
