@@ -19,7 +19,6 @@ from frappe import _, cint, cstr, get_newargs, is_whitelisted
 from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
 from frappe.handler import is_valid_http_method, run_server_script, upload_file
 from frappe.model.document import Document, get_doc_for_response
-from frappe.model.workflow import apply_workflow
 
 PERMISSION_MAP = {
 	"GET": "read",
@@ -35,6 +34,7 @@ def handle_rpc_call(method: str, doctype: str | None = None):
 		module = load_doctype_module(doctype)
 		method = module.__name__ + "." + method
 
+	is_workflow_response = method == "frappe.model.workflow.apply_workflow"
 	method = frappe.override_whitelisted_method(method)
 
 	# via server script
@@ -51,7 +51,7 @@ def handle_rpc_call(method: str, doctype: str | None = None):
 	is_valid_http_method(method)
 
 	result = frappe.call(method, **frappe.form_dict)
-	if method is apply_workflow and isinstance(result, Document):
+	if is_workflow_response and isinstance(result, Document):
 		return get_doc_for_response(result)
 	return result
 
