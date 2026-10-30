@@ -423,15 +423,17 @@ def _filtered_response_dict(doc: "Document", original: "Document", data: dict) -
 			data.pop(df.fieldname, None)
 	for df in doc.meta.get_table_fields(include_computed=True):
 		if df.fieldname in data:
-			data[df.fieldname] = [
-				_filtered_response_dict(child, original_child, child_data)
-				for child, original_child, child_data in zip(
-					getattr(doc, df.fieldname, None) or [],
-					getattr(original, df.fieldname, None) or [],
-					data[df.fieldname],
-					strict=True,
-				)
-			]
+			# Filtering parent fields can change computed table membership and order.
+			original_children = {
+				child.get("name"): child
+				for child in getattr(original, df.fieldname, None) or []
+				if child.get("name")
+			}
+			for child, child_data in zip(
+				getattr(doc, df.fieldname, None) or [], data[df.fieldname], strict=False
+			):
+				if original_child := original_children.get(child.get("name")):
+					_filtered_response_dict(child, original_child, child_data)
 	return data
 
 
