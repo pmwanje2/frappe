@@ -1,0 +1,299 @@
+"""Write responses must not disclose values computed by validation.
+
+The DB-free tests import the real endpoint functions, serializer and field-level
+permission helper. Only persistence, metadata and workflow configuration are
+substituted. The integration tests additionally exercise real storage, Version
+creation and after-commit callbacks on a disposable bench site.
+"""
+
+import json
+import unittest
+from contextlib import ExitStack
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import frappe
+import frappe.api.v1 as v1
+import frappe.api.v2 as v2
+import frappe.client
+import frappe.handler
+import frappe.model.workflow as workflow
+import frappe.translate
+from frappe.model.base_document import BaseDocument
+from frappe.model.document import Document
+from frappe.model.docstatus import DocStatus
+from frappe.tests import IntegrationTestCase
+
+
+ENDPOINTS = (
+	"client.insert",
+	"client.save",
+	"client.set_value",
+	"client.submit",
+	"client.cancel",
+	"v1.create_doc",
+	"v1.update_doc",
+	"v2.create_doc",
+	"workflow.desk",
+	"workflow.v2",
+)
+PRIVATE = "server-computed existing access"
+
+
+class WriteResponseDocument(Document):
+	def validate(self):
+		self.private_analysis = PRIVATE
+
+
+def call_write(endpoint, doc):
+	"""Invoke actual HTTP endpoint handlers, not copies of their implementation."""
+	data = {"doctype": doc.doctype, "name": doc.name, "requested_access": "requested"}
+	if endpoint in ("client.insert", "v1.create_doc", "v2.create_doc"):
+		data.pop("name")
+	frappe.local.request = SimpleNamespace(method="POST")
+	frappe.local.form_dict = frappe._dict()
+	if endpoint == "client.insert":
+		return frappe.client.insert(data)
+	if endpoint == "client.save":
+		return frappe.client.save(data)
+	if endpoint == "client.set_value":
+		return frappe.client.set_value(doc.doctype, doc.name, "requested_access", "requested")
+	if endpoint == "client.submit":
+		return frappe.client.submit(data)
+	if endpoint == "client.cancel":
+		return frappe.client.cancel(doc.doctype, doc.name)
+	if endpoint.startswith("v1."):
+		frappe.local.form_dict.data = json.dumps(data)
+		if endpoint == "v1.create_doc":
+			return v1.create_doc(doc.doctype)
+		return v1.update_doc(doc.doctype, doc.name)
+	if endpoint == "v2.create_doc":
+		frappe.local.form_dict.update(data)
+		return v2.create_doc(doc.doctype)
+	frappe.local.form_dict.update(doc=json.dumps(data), action="Lodge")
+	if endpoint == "workflow.desk":
+		return frappe.handler.execute_cmd("frappe.model.workflow.apply_workflow")
+	if endpoint == "workflow.v2":
+		return v2.handle_rpc_call("frappe.model.workflow.apply_workflow")
+	raise AssertionError(endpoint)
+
+
+def response_dict(result):
+	# Match Document.__json__, which is used for v1 and workflow responses.
+	return result.__json__() if isinstance(result, Document) else result
+
+
+class TestWriteResponsePermissions(unittest.TestCase):
+	"""Site-free boundary regression; no production service is contacted."""
+
+	def setUp(self):
+		self.context = ExitStack()
+		self.addCleanup(self.context.close)
+		for key, value in (
+			("session", frappe._dict(user="requester@example.test")),
+			("request", SimpleNamespace(method="POST")),
+			("form_dict", frappe._dict()),
+			("flags", frappe._dict()),
+			("lang", "en"),
+		):
+			self.context.enter_context(patch.object(frappe.local, key, value, create=True))
+		fields = [
+			frappe._dict(fieldname="requested_access", fieldtype="Data", permlevel=0),
+			frappe._dict(fieldname="private_analysis", fieldtype="Data", permlevel=1),
+			frappe._dict(fieldname="workflow_state", fieldtype="Data", permlevel=0),
+		]
+		self.meta = SimpleNamespace(
+			name="Test Write Response",
+			fields=fields,
+			istable=0,
+			_fields={df.fieldname: df for df in fields},
+			_table_doctypes={},
+			_non_computed_table_doctypes={},
+			permissions=[
+				frappe._dict(role="Requester", read=1, permlevel=0),
+				frappe._dict(role="Approver", read=1, permlevel=1),
+			],
+			get_table_fields=lambda **kwargs: [],
+			get_masked_fields=lambda **kwargs: [],
+			get_valid_fields=lambda: ["name", "docstatus", *(df.fieldname for df in fields)],
+		)
+		self.roles = ["Requester"]
+		self.context.enter_context(patch.object(frappe, "get_roles", side_effect=lambda: self.roles))
+		self.context.enter_context(patch.object(frappe, "get_meta", return_value=self.meta))
+		self.context.enter_context(patch.object(frappe, "is_table", return_value=False))
+		self.context.enter_context(patch.object(frappe, "get_installed_apps", return_value=["frappe"]))
+		self.context.enter_context(patch.object(frappe.translate, "get_all_translations", return_value={}))
+		self.context.enter_context(patch.object(frappe.handler, "get_server_script_map", return_value={}))
+		self.context.enter_context(patch.object(v2, "get_server_script_map", return_value={}))
+		self.context.enter_context(
+			patch.object(frappe, "override_whitelisted_method", side_effect=lambda m: m)
+		)
+		state = frappe._dict(state="Lodged", doc_status=0, update_field=None)
+		transition = frappe._dict(action="Lodge", next_state="Lodged", allow_self_approval=1)
+		self.context.enter_context(
+			patch.object(
+				workflow,
+				"get_workflow",
+				return_value=SimpleNamespace(workflow_state_field="workflow_state", states=[state]),
+			)
+		)
+		self.context.enter_context(patch.object(workflow, "get_transitions", return_value=[transition]))
+		self.context.enter_context(patch.object(Document, "load_from_db", return_value=None))
+		self.context.enter_context(patch.object(Document, "add_comment", return_value=None))
+		self.context.enter_context(patch.object(Document, "insert", autospec=True, side_effect=self.persist))
+		self.context.enter_context(patch.object(Document, "save", autospec=True, side_effect=self.persist))
+		self.context.enter_context(patch.object(Document, "submit", autospec=True, side_effect=self.persist))
+		self.context.enter_context(patch.object(Document, "cancel", autospec=True, side_effect=self.persist))
+
+	def new_document(self):
+		doc = WriteResponseDocument.__new__(WriteResponseDocument)
+		doc.flags = frappe._dict()
+		BaseDocument.__init__(
+			doc,
+			dict(
+				doctype="Test Write Response",
+				name="WRITE-1",
+				docstatus=DocStatus.DRAFT,
+				requested_access="requested",
+				workflow_state="Draft",
+			),
+		)
+		return doc
+
+	def persist(self, doc):
+		doc.validate()
+		self.stored = doc.as_dict()
+		# Retain the SAVED instance, as after-commit callbacks and queued jobs do.
+		self.saved = doc
+		return doc
+
+	def run_endpoint(self, endpoint):
+		doc = self.new_document()
+		with (
+			patch.object(frappe, "get_doc", return_value=doc),
+			patch.object(frappe, "new_doc", return_value=doc),
+		):
+			result = call_write(endpoint, doc)
+		return response_dict(result)
+
+	def test_requester_write_responses_omit_server_computed_private_field(self):
+		for endpoint in ENDPOINTS:
+			with self.subTest(endpoint=endpoint):
+				result = self.run_endpoint(endpoint)
+				self.assertEqual(result["requested_access"], "requested")
+				self.assertNotIn("private_analysis", result)
+
+	def test_level_one_reader_keeps_private_field(self):
+		self.roles.append("Approver")
+		for endpoint in ENDPOINTS:
+			with self.subTest(endpoint=endpoint):
+				self.assertEqual(self.run_endpoint(endpoint)["private_analysis"], PRIVATE)
+
+	def test_filter_does_not_mutate_storage_or_saved_instance(self):
+		for endpoint in ENDPOINTS:
+			with self.subTest(endpoint=endpoint):
+				self.run_endpoint(endpoint)
+				self.assertEqual(self.stored["private_analysis"], PRIVATE)
+				self.assertEqual(self.saved.private_analysis, PRIVATE)
+
+	def test_library_workflow_call_returns_full_document(self):
+		doc = self.new_document()
+		with patch.object(frappe, "get_doc", return_value=doc):
+			result = workflow.apply_workflow(doc, "Lodge")
+		self.assertIs(result, doc)
+		self.assertEqual(result.private_analysis, PRIVATE)
+
+
+class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
+	"""Requires a disposable initialized bench, never a live customer site."""
+
+	def test_write_responses_preserve_storage_versions_and_after_commit(self):
+		from frappe.core.doctype.doctype.test_doctype import new_doctype
+
+		frappe.set_user("Administrator")
+		self.addCleanup(frappe.set_user, "Administrator")
+		dt = new_doctype(
+			is_submittable=1,
+			track_changes=1,
+			fields=[
+				{"fieldname": "requested_access", "label": "Requested Access", "fieldtype": "Data"},
+				{
+					"fieldname": "private_analysis",
+					"label": "Private Analysis",
+					"fieldtype": "Data",
+					"permlevel": 1,
+				},
+				{"fieldname": "workflow_state", "label": "Workflow State", "fieldtype": "Data"},
+			],
+			permissions=[
+				{"role": "All", "read": 1, "write": 1, "create": 1, "submit": 1, "cancel": 1},
+				{"role": "System Manager", "read": 1, "permlevel": 1},
+			],
+		).insert()
+		self.addCleanup(frappe.delete_doc, "DocType", dt.name, force=True)
+		callbacks = []
+
+		class AuditedWriteResponseDocument(WriteResponseDocument):
+			def on_change(self):
+				frappe.db.after_commit.add(lambda: callbacks.append(self.private_analysis))
+
+		with patch.dict(frappe.controllers[frappe.local.site], {dt.name: AuditedWriteResponseDocument}):
+			for endpoint in ENDPOINTS:
+				for user, roles in (
+					("test@example.com", ["All"]),
+					("test1@example.com", ["All", "System Manager"]),
+				):
+					with self.subTest(endpoint=endpoint, user=user):
+						frappe.set_user("Administrator")
+						doc = frappe.get_doc(
+							doctype=dt.name, requested_access="before", workflow_state="Draft"
+						).insert()
+						if endpoint == "client.cancel":
+							doc.submit()
+						# Force a fresh private-field diff for the native Version audit.
+						if endpoint != "client.cancel":
+							frappe.db.set_value(
+								dt.name, doc.name, "private_analysis", "before", update_modified=False
+							)
+						callbacks.clear()
+						frappe.set_user(user)
+						state = frappe._dict(state="Lodged", doc_status=0, update_field=None)
+						transition = frappe._dict(action="Lodge", next_state="Lodged", allow_self_approval=1)
+						with (
+							patch.object(frappe, "get_roles", return_value=roles),
+							patch.object(
+								workflow,
+								"get_workflow",
+								return_value=SimpleNamespace(
+									workflow_state_field="workflow_state", states=[state]
+								),
+							),
+							patch.object(workflow, "get_transitions", return_value=[transition]),
+						):
+							result = response_dict(call_write(endpoint, doc))
+						if "System Manager" in roles:
+							self.assertEqual(result["private_analysis"], PRIVATE)
+						else:
+							self.assertNotIn("private_analysis", result)
+						name = result["name"]
+						self.assertEqual(frappe.db.get_value(dt.name, name, "private_analysis"), PRIVATE)
+						frappe.db.after_commit.run()
+						self.assertTrue(callbacks)
+						self.assertTrue(all(value == PRIVATE for value in callbacks))
+						if endpoint not in (
+							"client.insert",
+							"v1.create_doc",
+							"v2.create_doc",
+							"client.cancel",
+						):
+							versions = frappe.get_all(
+								"Version", filters={"ref_doctype": dt.name, "docname": name}, pluck="data"
+							)
+							self.assertTrue(
+								any(
+									["private_analysis", "before", PRIVATE]
+									in json.loads(data).get("changed", [])
+									for data in versions
+								)
+							)
+		frappe.set_user("Administrator")
