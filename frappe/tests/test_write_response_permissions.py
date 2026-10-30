@@ -263,6 +263,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 						child,
 						dict(
 							doctype=table.options,
+							name="ROW-1",
 							public_null=None,
 							private_analysis=PRIVATE,
 							private_count=42,
@@ -308,6 +309,8 @@ class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
 	def test_write_responses_preserve_storage_versions_and_after_commit(self):
 		from frappe.core.doctype.doctype.test_doctype import new_doctype
 
+		self.enterContext(patch.object(frappe.local, "request", frappe._dict(method="POST"), create=True))
+		self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.set_user, "Administrator")
 		dt = new_doctype(
