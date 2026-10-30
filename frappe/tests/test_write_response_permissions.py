@@ -20,10 +20,9 @@ import frappe.handler
 import frappe.model.workflow as workflow
 import frappe.translate
 from frappe.model.base_document import BaseDocument
-from frappe.model.document import Document
 from frappe.model.docstatus import DocStatus
+from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
-
 
 ENDPOINTS = (
 	"client.insert",
@@ -47,7 +46,12 @@ class WriteResponseDocument(Document):
 
 def call_write(endpoint, doc):
 	"""Invoke actual HTTP endpoint handlers, not copies of their implementation."""
-	data = {"doctype": doc.doctype, "name": doc.name, "requested_access": "requested"}
+	data = {
+		"doctype": doc.doctype,
+		"name": doc.name,
+		"modified": doc.get("modified"),
+		"requested_access": "requested",
+	}
 	if endpoint in ("client.insert", "v1.create_doc", "v2.create_doc"):
 		data.pop("name")
 	frappe.local.request = SimpleNamespace(method="POST")
@@ -231,6 +235,7 @@ class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
 			],
 		).insert()
 		self.addCleanup(frappe.delete_doc, "DocType", dt.name, force=True)
+		self.addCleanup(frappe.set_user, "Administrator")
 		callbacks = []
 
 		class AuditedWriteResponseDocument(WriteResponseDocument):
