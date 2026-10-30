@@ -235,6 +235,17 @@ class TestWriteResponsePermissions(unittest.TestCase):
 					self.assertIsNone(result["optional_comment"])
 
 	def test_parent_and_child_fields_are_omitted_without_mutating_saved_rows(self):
+		self.assert_child_response_fields()
+
+	def test_computed_child_table_uses_filtered_parent_fields(self):
+		@property
+		def computed_rows(self):
+			return self.rows if getattr(self, "private_count", 0) else []
+
+		with patch.object(WriteResponseDocument, "computed_rows", computed_rows):
+			self.assert_child_response_fields(computed_rows_visible=False)
+
+	def assert_child_response_fields(self, *, computed_rows_visible=True):
 		count = frappe._dict(fieldname="private_count", fieldtype="Int", permlevel=1)
 		self.meta.fields.append(count)
 		self.meta._fields[count.fieldname] = count
@@ -305,6 +316,8 @@ class TestWriteResponsePermissions(unittest.TestCase):
 					self.assertEqual(self.saved.private_count, 42)
 					self.assertEqual(self.stored["private_count"], 42)
 					self.assertEqual(self.stored["rows"][0]["private_count"], 42)
+					self.assertEqual(self.saved.computed_rows, self.saved.rows)
+					self.assertEqual(self.stored["computed_rows"][0]["private_count"], 42)
 					row = {"doctype": table.options}
 					if endpoint in (*ENDPOINTS[:5], "v2.create_doc"):
 						row["public_null"] = None
@@ -312,7 +325,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 						{"parent_count": result.get("private_count", "omitted"), "rows": result["rows"]},
 						{"parent_count": "omitted", "rows": [row]},
 					)
-					self.assertEqual(result["computed_rows"], [row])
+					self.assertEqual(result["computed_rows"], [row] if computed_rows_visible else [])
 
 	def test_virtual_field_uses_native_readable_fieldnames(self):
 		field = frappe._dict(fieldname="private_virtual", fieldtype="Data", is_virtual=1, permlevel=1)
