@@ -302,6 +302,20 @@ class TestWriteResponsePermissions(unittest.TestCase):
 						else:
 							self.assertNotIn(field.fieldname, result)
 
+	def test_overridden_workflow_endpoint_still_filters_its_response(self):
+		@frappe.whitelist()
+		def workflow_override(doc, action):
+			return workflow.apply_workflow(doc, action)
+
+		with (
+			patch.object(frappe, "override_whitelisted_method", return_value="test_app.workflow_override"),
+			patch.object(frappe, "get_attr", return_value=workflow_override),
+		):
+			for endpoint in ("workflow.desk", "workflow.v2"):
+				with self.subTest(endpoint=endpoint):
+					self.assertNotIn("private_analysis", self.run_endpoint(endpoint))
+					self.assertEqual(self.saved.private_analysis, PRIVATE)
+
 
 class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
 	"""Requires a disposable initialized bench, never a live customer site."""
