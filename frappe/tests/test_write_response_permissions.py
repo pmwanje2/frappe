@@ -9,7 +9,7 @@ creation and after-commit callbacks on a disposable bench site.
 import json
 import unittest
 from contextlib import ExitStack
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -22,6 +22,7 @@ import frappe.translate
 from frappe.model.base_document import BaseDocument
 from frappe.model.docstatus import DocStatus
 from frappe.model.document import Document
+from frappe.model.meta import Meta
 from frappe.tests import IntegrationTestCase
 
 ENDPOINTS = (
@@ -40,6 +41,10 @@ PRIVATE = "server-computed existing access"
 
 
 class WriteResponseDocument(Document):
+	@property
+	def private_virtual(self):
+		return PRIVATE
+
 	def validate(self):
 		self.private_analysis = PRIVATE
 
@@ -123,7 +128,9 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			get_valid_fields=lambda: ["name", "docstatus", *(df.fieldname for df in fields)],
 		)
 		self.roles = ["Requester"]
-		self.context.enter_context(patch.object(frappe, "get_roles", side_effect=lambda: self.roles))
+		self.context.enter_context(
+			patch.object(frappe, "get_roles", side_effect=lambda user=None: self.roles)
+		)
 		self.context.enter_context(patch.object(frappe, "get_meta", return_value=self.meta))
 		self.context.enter_context(patch.object(frappe, "is_table", return_value=False))
 		self.context.enter_context(patch.object(frappe, "get_installed_apps", return_value=["frappe"]))
@@ -222,6 +229,77 @@ class TestWriteResponsePermissions(unittest.TestCase):
 					result = self.run_endpoint(endpoint)
 					self.assertIn("optional_comment", result)
 					self.assertIsNone(result["optional_comment"])
+
+	def test_dictionary_child_fields_are_omitted_without_mutating_saved_rows(self):
+		table = frappe._dict(fieldname="rows", fieldtype="Table", options="Test Response Child", permlevel=0)
+		self.meta.fields.append(table)
+		self.meta._fields["rows"] = table
+		self.meta._table_doctypes["rows"] = table.options
+		self.meta.get_table_fields = lambda **kwargs: [table]
+		child_fields = [
+			frappe._dict(fieldname="public_null", fieldtype="Data", permlevel=0),
+			frappe._dict(fieldname="private_analysis", fieldtype="Data", permlevel=1),
+			frappe._dict(fieldname="private_count", fieldtype="Int", permlevel=1),
+		]
+		child_meta = SimpleNamespace(
+			fields=child_fields,
+			_fields={df.fieldname: df for df in child_fields},
+			_table_doctypes={},
+			_non_computed_table_doctypes={},
+			get_valid_fields=lambda: [df.fieldname for df in child_fields],
+			get_table_fields=lambda **kwargs: [],
+			get_masked_fields=lambda **kwargs: [],
+		)
+		with patch.object(
+			frappe,
+			"get_meta",
+			side_effect=lambda doctype: child_meta if doctype == table.options else self.meta,
+		):
+			for endpoint in (*ENDPOINTS[:5], "v2.create_doc"):
+				with self.subTest(endpoint=endpoint):
+					child = Document.__new__(Document)
+					child.flags = frappe._dict()
+					BaseDocument.__init__(
+						child,
+						dict(
+							doctype=table.options,
+							public_null=None,
+							private_analysis=PRIVATE,
+							private_count=42,
+						),
+					)
+					doc = self.new_document()
+					doc.rows = [child]
+					with patch.object(self, "new_document", return_value=doc):
+						result = self.run_endpoint(endpoint)
+					self.assertEqual(child.private_analysis, PRIVATE)
+					self.assertEqual(child.private_count, 42)
+					self.assertEqual(result["rows"], [{"doctype": table.options, "public_null": None}])
+
+	def test_virtual_field_uses_native_readable_fieldnames(self):
+		field = frappe._dict(fieldname="private_virtual", fieldtype="Data", is_virtual=1, permlevel=1)
+		self.meta.fields.append(field)
+		self.meta._fields[field.fieldname] = field
+		self.meta.default_fields = ["name", "docstatus"]
+		self.meta.get_valid_columns = self.meta.get_valid_fields
+		self.meta.get = lambda key, default=None: getattr(self.meta, key, default)
+		for name in (
+			"get_permissions",
+			"get_permlevel_access",
+			"get_permitted_fieldnames",
+			"get_fieldnames_with_value",
+		):
+			setattr(self.meta, name, MethodType(getattr(Meta, name), self.meta))
+		with patch.object(frappe, "only_has_select_perm", return_value=False):
+			for roles, visible in ((["Requester"], False), (["Requester", "Approver"], True)):
+				self.roles = roles
+				for endpoint in ENDPOINTS:
+					with self.subTest(endpoint=endpoint, visible=visible):
+						result = self.run_endpoint(endpoint)
+						if visible:
+							self.assertEqual(result[field.fieldname], PRIVATE)
+						else:
+							self.assertNotIn(field.fieldname, result)
 
 
 class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
