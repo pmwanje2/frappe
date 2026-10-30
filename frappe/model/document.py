@@ -426,8 +426,8 @@ def _filtered_response_dict(doc: "Document", original: "Document", data: dict) -
 			data[df.fieldname] = [
 				_filtered_response_dict(child, original_child, child_data)
 				for child, original_child, child_data in zip(
-					doc.get(df.fieldname) or [],
-					original.get(df.fieldname) or [],
+					getattr(doc, df.fieldname, None) or [],
+					getattr(original, df.fieldname, None) or [],
 					data[df.fieldname],
 					strict=True,
 				)
