@@ -405,11 +405,21 @@ def get_doc_permission_check(doc: "Document", check_permission: str | bool | Non
 	return doc
 
 
-def get_doc_for_response(doc: "Document") -> "Document":
+def get_doc_for_response(doc: "Document", *, as_dict: bool = False) -> "Document | dict":
 	"""Filter a response copy without changing the document retained by save hooks."""
 	response_doc = deepcopy(doc)
 	response_doc.apply_fieldlevel_read_permissions()
-	return response_doc
+	return _filtered_response_dict(response_doc) if as_dict else response_doc
+
+
+def _filtered_response_dict(doc: "Document") -> dict:
+	data = doc.as_dict()
+	# as_dict restores deleted fields as null/default values. Omit only fields
+	# removed by the native filter, preserving readable nulls and numeric types.
+	for df in doc.meta.fields:
+		if df.permlevel and df.fieldname in data and not hasattr(doc, df.fieldname):
+			data.pop(df.fieldname)
+	return data
 
 
 # Keeps `super(Document, self).__init__(d)` working in controllers written before `Document.init_from_dict`.
