@@ -419,6 +419,9 @@ def _filtered_response_dict(doc: "Document") -> dict:
 	for df in doc.meta.fields:
 		if df.permlevel and df.fieldname in data and not hasattr(doc, df.fieldname):
 			data.pop(df.fieldname)
+	for df in doc.meta.get_table_fields(include_computed=True):
+		if df.fieldname in data:
+			data[df.fieldname] = [_filtered_response_dict(child) for child in doc.get(df.fieldname) or []]
 	return data
 
 
