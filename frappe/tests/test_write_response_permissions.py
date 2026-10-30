@@ -42,6 +42,10 @@ PRIVATE = "server-computed existing access"
 
 class WriteResponseDocument(Document):
 	@property
+	def computed_rows(self):
+		return self.rows
+
+	@property
 	def private_virtual(self):
 		return PRIVATE
 
@@ -238,7 +242,23 @@ class TestWriteResponsePermissions(unittest.TestCase):
 		self.meta.fields.append(table)
 		self.meta._fields["rows"] = table
 		self.meta._table_doctypes["rows"] = table.options
-		self.meta.get_table_fields = lambda **kwargs: [table]
+		computed_table = frappe._dict(
+			fieldname="computed_rows", fieldtype="Table", options=table.options, is_virtual=1, permlevel=0
+		)
+		self.meta.fields.append(computed_table)
+		self.meta._fields["computed_rows"] = computed_table
+		self.meta._table_doctypes["computed_rows"] = table.options
+		self.meta.get_table_fields = lambda **kwargs: [table, computed_table]
+		self.meta.default_fields = ["name", "docstatus"]
+		self.meta.get_valid_columns = self.meta.get_valid_fields
+		self.meta.get = lambda key, default=None: getattr(self.meta, key, default)
+		for name in (
+			"get_permissions",
+			"get_permlevel_access",
+			"get_permitted_fieldnames",
+			"get_fieldnames_with_value",
+		):
+			setattr(self.meta, name, MethodType(getattr(Meta, name), self.meta))
 		child_fields = [
 			frappe._dict(fieldname="public_null", fieldtype="Data", permlevel=0),
 			frappe._dict(fieldname="private_analysis", fieldtype="Data", permlevel=1),
@@ -253,10 +273,13 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			get_table_fields=lambda **kwargs: [],
 			get_masked_fields=lambda **kwargs: [],
 		)
-		with patch.object(
-			frappe,
-			"get_meta",
-			side_effect=lambda doctype: child_meta if doctype == table.options else self.meta,
+		with (
+			patch.object(frappe, "only_has_select_perm", return_value=False),
+			patch.object(
+				frappe,
+				"get_meta",
+				side_effect=lambda doctype: child_meta if doctype == table.options else self.meta,
+			),
 		):
 			for endpoint in ENDPOINTS:
 				with self.subTest(endpoint=endpoint):
@@ -289,6 +312,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 						{"parent_count": result.get("private_count", "omitted"), "rows": result["rows"]},
 						{"parent_count": "omitted", "rows": [row]},
 					)
+					self.assertEqual(result["computed_rows"], [row])
 
 	def test_virtual_field_uses_native_readable_fieldnames(self):
 		field = frappe._dict(fieldname="private_virtual", fieldtype="Data", is_virtual=1, permlevel=1)
