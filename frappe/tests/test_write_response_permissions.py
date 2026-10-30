@@ -291,16 +291,28 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			"get_fieldnames_with_value",
 		):
 			setattr(self.meta, name, MethodType(getattr(Meta, name), self.meta))
-		with patch.object(frappe, "only_has_select_perm", return_value=False):
-			for roles, visible in ((["Requester"], False), (["Requester", "Approver"], True)):
-				self.roles = roles
-				for endpoint in ENDPOINTS:
-					with self.subTest(endpoint=endpoint, visible=visible):
-						result = self.run_endpoint(endpoint)
-						if visible:
-							self.assertEqual(result[field.fieldname], PRIVATE)
-						else:
-							self.assertNotIn(field.fieldname, result)
+		with (
+			patch.object(frappe, "only_has_select_perm", return_value=False),
+			patch("frappe.utils.safe_exec.get_safe_globals", return_value={}),
+		):
+			for fieldname, options in (("private_virtual", None), ("private_expression", repr(PRIVATE))):
+				self.meta._fields.pop(field.fieldname)
+				field.update(fieldname=fieldname, options=options)
+				self.meta._fields[fieldname] = field
+				for user, roles, visible in (
+					("requester@example.test", ["Requester"], False),
+					("approver@example.test", ["Requester", "Approver"], True),
+					("Administrator", ["Requester", "Approver"], True),
+				):
+					frappe.local.session.user = user
+					self.roles = roles
+					for endpoint in ENDPOINTS:
+						with self.subTest(field=fieldname, user=user, endpoint=endpoint):
+							result = self.run_endpoint(endpoint)
+							if visible:
+								self.assertEqual(result.get(fieldname), PRIVATE)
+							else:
+								self.assertNotIn(fieldname, result)
 
 	def test_overridden_workflow_endpoint_still_filters_its_response(self):
 		@frappe.whitelist()
