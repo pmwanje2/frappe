@@ -105,6 +105,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			frappe._dict(fieldname="requested_access", fieldtype="Data", permlevel=0),
 			frappe._dict(fieldname="private_analysis", fieldtype="Data", permlevel=1),
 			frappe._dict(fieldname="workflow_state", fieldtype="Data", permlevel=0),
+			frappe._dict(fieldname="optional_comment", fieldtype="Data", permlevel=0),
 		]
 		self.meta = SimpleNamespace(
 			name="Test Write Response",
@@ -160,6 +161,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 				docstatus=DocStatus.DRAFT,
 				requested_access="requested",
 				workflow_state="Draft",
+				optional_comment=None,
 			),
 		)
 		return doc
@@ -206,6 +208,20 @@ class TestWriteResponsePermissions(unittest.TestCase):
 			result = workflow.apply_workflow(doc, "Lodge")
 		self.assertIs(result, doc)
 		self.assertEqual(result.private_analysis, PRIVATE)
+
+	def test_dictionary_responses_preserve_readable_null_fields(self):
+		for user, roles in (
+			("requester@example.test", ["Requester"]),
+			("approver@example.test", ["Requester", "Approver"]),
+			("Administrator", []),
+		):
+			frappe.local.session.user = user
+			self.roles = roles
+			for endpoint in (*ENDPOINTS[:5], "v2.create_doc"):
+				with self.subTest(user=user, endpoint=endpoint):
+					result = self.run_endpoint(endpoint)
+					self.assertIn("optional_comment", result)
+					self.assertIsNone(result["optional_comment"])
 
 
 class TestWriteResponsePermissionsIntegration(IntegrationTestCase):
