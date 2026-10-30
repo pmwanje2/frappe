@@ -14,6 +14,8 @@ import frappe.utils
 from frappe import _, is_whitelisted, ping
 from frappe.core.doctype.file.utils import find_file_by_url, get_safe_file_name
 from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
+from frappe.model.document import Document, get_doc_for_response
+from frappe.model.workflow import apply_workflow
 from frappe.monitor import add_data_to_monitor
 from frappe.permissions import check_doctype_permission
 from frappe.utils import cint, get_files_path
@@ -84,7 +86,11 @@ def execute_cmd(cmd, from_async=False):
 		is_whitelisted(method)
 		is_valid_http_method(method)
 
-	return frappe.call(method, **frappe.form_dict)
+	result = frappe.call(method, **frappe.form_dict)
+	# Workflow library callers need the full document; redact only RPC responses.
+	if method is apply_workflow and isinstance(result, Document):
+		return get_doc_for_response(result)
+	return result
 
 
 def run_server_script(server_script):

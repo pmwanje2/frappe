@@ -5,6 +5,7 @@ from werkzeug.routing import Rule
 import frappe
 from frappe import _
 from frappe.handler import is_valid_http_method
+from frappe.model.document import get_doc_for_response
 from frappe.utils import attach_expanded_links
 from frappe.utils.data import sbool
 
@@ -44,7 +45,7 @@ def handle_rpc_call(method: str):
 def create_doc(doctype: str):
 	data = get_request_form_data()
 	data.pop("doctype", None)
-	return frappe.new_doc(doctype, **data).insert()
+	return get_doc_for_response(frappe.new_doc(doctype, **data).insert())
 
 
 def update_doc(doctype: str, name: str):
@@ -61,7 +62,7 @@ def update_doc(doctype: str, name: str):
 	if doc.get("parenttype"):
 		frappe.get_doc(doc.parenttype, doc.parent).save()
 
-	return doc
+	return get_doc_for_response(doc)
 
 
 def delete_doc(doctype: str, name: str):

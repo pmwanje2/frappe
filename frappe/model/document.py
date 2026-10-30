@@ -9,6 +9,7 @@ import time
 import warnings
 from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
+from copy import deepcopy
 from functools import wraps
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Optional, Self, TypeAlias, Union, overload, override
@@ -190,6 +191,13 @@ def get_doc_permission_check(doc: "Document", check_permission: str | bool | Non
 		else:
 			doc.check_permission("read")
 	return doc
+
+
+def get_doc_for_response(doc: "Document") -> "Document":
+	"""Filter a response copy without changing the document retained by save hooks."""
+	response_doc = deepcopy(doc)
+	response_doc.apply_fieldlevel_read_permissions()
+	return response_doc
 
 
 class Document(BaseDocument):

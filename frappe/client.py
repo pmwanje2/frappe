@@ -10,6 +10,7 @@ import frappe.utils
 from frappe import _
 from frappe.desk.reportview import validate_args
 from frappe.desk.search import PAGE_LENGTH_FOR_LINK_VALIDATION, search_widget
+from frappe.model.document import get_doc_for_response
 from frappe.utils import attach_expanded_links, get_safe_filters
 from frappe.utils.caching import http_cache
 
@@ -214,7 +215,7 @@ def set_value(doctype: str, name: str | int, fieldname: str | dict[str, Any], va
 
 	doc.save()
 
-	return doc.as_dict()
+	return get_doc_for_response(doc).as_dict(no_nulls=True)
 
 
 @frappe.whitelist(methods=["POST", "PUT"])
@@ -225,7 +226,7 @@ def insert(doc: str | dict[str, Any] | None = None):
 	if isinstance(doc, str):
 		doc = json.loads(doc)
 
-	return insert_doc(doc).as_dict()
+	return get_doc_for_response(insert_doc(doc)).as_dict(no_nulls=True)
 
 
 @frappe.whitelist(methods=["POST", "PUT"])
@@ -253,7 +254,7 @@ def save(doc: str | dict[str, Any]):
 	doc = frappe.get_doc(doc)
 	doc.save()
 
-	return doc.as_dict()
+	return get_doc_for_response(doc).as_dict(no_nulls=True)
 
 
 @frappe.whitelist(methods=["POST", "PUT"])
@@ -278,7 +279,7 @@ def submit(doc: str | dict[str, Any]):
 	doc = frappe.get_doc(doc)
 	doc.submit()
 
-	return doc.as_dict()
+	return get_doc_for_response(doc).as_dict(no_nulls=True)
 
 
 @frappe.whitelist(methods=["POST", "PUT"])
@@ -290,7 +291,7 @@ def cancel(doctype: str, name: str | int):
 	wrapper = frappe.get_doc(doctype, name)
 	wrapper.cancel()
 
-	return wrapper.as_dict()
+	return get_doc_for_response(wrapper).as_dict(no_nulls=True)
 
 
 @frappe.whitelist(methods=["DELETE", "POST"])
