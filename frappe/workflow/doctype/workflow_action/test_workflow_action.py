@@ -16,6 +16,105 @@ from frappe.workflow.doctype.workflow_action import workflow_action as actions
 
 
 class TestWorkflowAction(IntegrationTestCase):
+	def test_candidate_action_cycle_persists_completion_actor_and_fresh_reentry(self):
+		"""Real DB/hook integration, authored only; source units must not select it."""
+		from frappe.model.workflow import WorkflowTransitionError, apply_workflow
+		from frappe.tests.utils import make_test_records
+		from frappe.workflow.doctype.workflow.test_workflow import create_todo_workflow
+
+		make_test_records("User")
+		frappe.set_user("Administrator")
+		workflow = create_todo_workflow()
+		self.addCleanup(frappe.delete_doc, "Workflow", workflow.name)
+		for name in ("test2@example.com", "test3@example.com"):
+			user = frappe.get_doc("User", name)
+			self.assertEqual(user.user_type, "System User")
+			prior_roles = {row.role for row in user.roles}
+			self.assertNotIn("System Manager", prior_roles)
+			user.add_roles("Test Approver")
+			if "Test Approver" not in prior_roles:
+				self.addCleanup(user.remove_roles, "Test Approver")
+		workflow.send_email_alert = 0
+		for transition in workflow.transitions:
+			transition.allowed = "Test Approver"
+			transition.allow_self_approval = 0
+			transition.condition = (
+				"frappe.session.user == doc.assigned_by"
+				if transition.action == "Review"
+				else "frappe.session.user == doc.allocated_to"
+			)
+		workflow.save()
+		todo = frappe.get_doc(
+			doctype="ToDo",
+			description="persisted candidate approval cycle",
+			allocated_to="test2@example.com",
+			assigned_by="test3@example.com",
+		).insert()
+
+		def records():
+			return frappe.get_all(
+				"Workflow Action",
+				filters={"reference_doctype": "ToDo", "reference_name": todo.name},
+				fields=[
+					"name",
+					"workflow_state",
+					"status",
+					"completed_by",
+					"completed_by_role",
+					"modified_by",
+				],
+				order_by="name",
+			)
+
+		initial = records()
+		self.assertEqual(len(initial), 1)
+		first_name = initial[0].name
+		self.assertEqual((initial[0].workflow_state, initial[0].status), ("Pending", "Open"))
+		self.assertEqual(initial[0].modified_by, "Administrator")
+		self.assertFalse(initial[0].completed_by)
+		with self.set_user("test2@example.com"):
+			self.assertNotIn("System Manager", frappe.get_roles())
+			apply_workflow(todo, "Reject")
+		first = next(row for row in records() if row.name == first_name)
+		self.assertEqual(
+			(first.status, first.completed_by, first.completed_by_role, first.modified_by),
+			("Completed", "test2@example.com", "Test Approver", "test2@example.com"),
+		)
+		rejected = next(row for row in records() if row.status == "Open")
+		self.assertEqual(rejected.workflow_state, "Rejected")
+		with self.set_user("test3@example.com"):
+			self.assertNotIn("System Manager", frappe.get_roles())
+			apply_workflow(todo, "Review")
+		rows = records()
+		review = next(row for row in rows if row.name == rejected.name)
+		self.assertEqual(
+			(review.status, review.completed_by, review.completed_by_role, review.modified_by),
+			("Completed", "test3@example.com", "Test Approver", "test3@example.com"),
+		)
+		second = next(row for row in rows if row.status == "Open")
+		self.assertEqual(second.workflow_state, "Pending")
+		self.assertNotEqual(second.name, first_name)
+		self.assertFalse(second.completed_by, "reentry must not reuse the earlier review")
+		self.assertFalse(second.completed_by_role)
+		self.assertEqual(second.modified_by, "test3@example.com")
+		self.assertEqual(next(row for row in rows if row.name == first_name), first)
+		with self.set_user("test3@example.com"):
+			with self.assertRaises(WorkflowTransitionError):
+				apply_workflow(todo, "Approve")
+		self.assertEqual(records(), rows, "unauthorized action must not complete the new task")
+		with self.set_user("test2@example.com"):
+			apply_workflow(todo, "Approve")
+		final = records()
+		self.assertEqual(len(final), 3)
+		self.assertFalse(any(row.status == "Open" for row in final))
+		self.assertEqual(next(row for row in final if row.name == first_name), first)
+		self.assertEqual(next(row for row in final if row.name == rejected.name), review)
+		completed = next(row for row in final if row.name == second.name)
+		self.assertEqual(
+			(completed.status, completed.completed_by, completed.completed_by_role),
+			("Completed", "test2@example.com", "Test Approver"),
+		)
+
 	def test_candidate_action_creation_uses_real_permission_aware_list(self):
 		"""Fresh-lab integration only; never selected by the source-unit runner."""
 		from frappe.tests.utils import make_test_records
