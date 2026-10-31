@@ -19,7 +19,6 @@ import frappe.client
 import frappe.handler
 import frappe.model.workflow as workflow
 import frappe.translate
-from frappe.model.base_document import BaseDocument
 from frappe.model.docstatus import DocStatus
 from frappe.model.document import Document
 from frappe.model.meta import Meta
@@ -155,6 +154,8 @@ class TestWriteResponsePermissions(unittest.TestCase):
 		)
 		self.context.enter_context(patch.object(workflow, "get_transitions", return_value=[transition]))
 		self.context.enter_context(patch.object(Document, "load_from_db", return_value=None))
+		# v16.54 v1.update_doc pre-checks write access; authorization is outside this response-privacy suite.
+		self.context.enter_context(patch.object(Document, "check_permission", return_value=None))
 		self.context.enter_context(patch.object(Document, "add_comment", return_value=None))
 		self.context.enter_context(patch.object(Document, "insert", autospec=True, side_effect=self.persist))
 		self.context.enter_context(patch.object(Document, "save", autospec=True, side_effect=self.persist))
@@ -164,8 +165,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 	def new_document(self):
 		doc = WriteResponseDocument.__new__(WriteResponseDocument)
 		doc.flags = frappe._dict()
-		BaseDocument.__init__(
-			doc,
+		doc.init_from_dict(
 			dict(
 				doctype="Test Write Response",
 				name="WRITE-1",
@@ -296,8 +296,7 @@ class TestWriteResponsePermissions(unittest.TestCase):
 				with self.subTest(endpoint=endpoint):
 					child = Document.__new__(Document)
 					child.flags = frappe._dict()
-					BaseDocument.__init__(
-						child,
+					child.init_from_dict(
 						dict(
 							doctype=table.options,
 							name="ROW-1",
