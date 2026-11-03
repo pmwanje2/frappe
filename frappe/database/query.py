@@ -1028,6 +1028,20 @@ class Engine:
 
 		# Skip field permission check if doctype has no permissions defined
 		meta = frappe.get_meta(doctype)
+		parent_fieldname = None
+		if meta.istable and not parent_doctype:
+			# Qualified child references must not skip inherited parent permissions.
+			parent_doctype = self.parent_doctype if doctype == self.doctype else self.doctype
+			parent_meta = frappe.get_meta(parent_doctype) if parent_doctype else None
+			table_fields = (
+				[df for df in parent_meta.get_table_fields() if df.options == doctype]
+				if parent_meta and not parent_meta.istable
+				else []
+			)
+			if len(table_fields) != 1:
+				self._raise_permission_error(doctype)
+			parent_fieldname = table_fields[0].fieldname
+
 		if not meta.get_permissions(parenttype=parent_doctype):
 			return
 
@@ -1040,6 +1054,9 @@ class Engine:
 				),
 				frappe.PermissionError,
 			)
+
+		if parent_fieldname:
+			self._check_field_permission(parent_doctype, parent_fieldname, for_filtering=for_filtering)
 
 		permission_source = (
 			self._get_filterable_fields if for_filtering else self._get_cached_permitted_fields
