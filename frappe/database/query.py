@@ -1026,9 +1026,8 @@ class Engine:
 		if fieldname in OPTIONAL_FIELDS:
 			return
 
-		# Skip field permission check if doctype has no permissions defined
 		meta = frappe.get_meta(doctype)
-		parent_fieldname = None
+		parent_field = None
 		if meta.istable and not parent_doctype:
 			# Qualified child references must not skip inherited parent permissions.
 			parent_doctype = self.parent_doctype if doctype == self.doctype else self.doctype
@@ -1040,9 +1039,12 @@ class Engine:
 			)
 			if len(table_fields) != 1:
 				self._raise_permission_error(doctype)
-			parent_fieldname = table_fields[0].fieldname
+			parent_field = table_fields[0]
 
 		if not meta.get_permissions(parenttype=parent_doctype):
+			if parent_field:
+				self._raise_permission_error(doctype)
+			# Preserve the existing behavior for non-inferred contexts.
 			return
 
 		# Don't allow querying child table fields if user has only "select" permission
@@ -1055,8 +1057,10 @@ class Engine:
 				frappe.PermissionError,
 			)
 
-		if parent_fieldname:
-			self._check_field_permission(parent_doctype, parent_fieldname, for_filtering=for_filtering)
+		if parent_field and parent_field.permlevel not in parent_meta.get_permlevel_access(
+			permission_type, user=self.user
+		):
+			self._raise_permission_error(doctype)
 
 		permission_source = (
 			self._get_filterable_fields if for_filtering else self._get_cached_permitted_fields
