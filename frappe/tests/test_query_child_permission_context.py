@@ -30,7 +30,9 @@ class TestChildPermissionContext(unittest.TestCase):
 		context = ExitStack()
 		self.addCleanup(context.close)
 		self.parent = Metadata(
-			name="Parent", istable=False, permissions=[{"read": 1}],
+			name="Parent",
+			istable=False,
+			permissions=[{"read": 1}],
 			table_fields=[SimpleNamespace(fieldname="lines", options="Line")],
 		)
 		self.child = Metadata(name="Line", istable=True, permissions=[], table_fields=[])
