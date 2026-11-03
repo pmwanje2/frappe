@@ -72,6 +72,9 @@ class IntegrationTestWorkspaceSidebar(IntegrationTestCase):
 		self.addCleanup(frappe.delete_doc, "DocType", reference_type.name, force=True)
 		reference = frappe.get_doc({"doctype": reference_type.name, "report": report.name}).insert()
 		self.addCleanup(frappe.delete_doc, reference.doctype, reference.name)
+		# The schema was created inside this test, after earlier report deletions
+		# populated the request-local link-field inventory.
+		frappe.flags.link_fields = {}
 
 		links = get_linked_docs(report) + get_dynamic_linked_docs(report)
 		self.assertEqual(
