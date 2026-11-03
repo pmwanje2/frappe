@@ -1058,8 +1058,12 @@ class Engine:
 				frappe.PermissionError,
 			)
 
-		if parent_field and parent_field.permlevel not in parent_meta.get_permlevel_access(
-			permission_type, user=self.user
+		# Native field resolution below handles level-0 read shares.
+		if (
+			parent_field
+			and parent_field.permlevel > 0
+			and parent_field.permlevel
+			not in parent_meta.get_permlevel_access(permission_type, user=self.user)
 		):
 			self._raise_permission_error(doctype)
 
