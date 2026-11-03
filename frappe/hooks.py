@@ -470,6 +470,8 @@ ignore_links_on_delete = [
 	"Sidebar",
 	"Custom Sidebar",
 	"Dock",
+	# The pre-conversion navigation archive stays intact for migration recovery.
+	"Workspace Sidebar",
 ]
 
 # Request Hooks
