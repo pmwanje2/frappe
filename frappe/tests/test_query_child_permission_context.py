@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
+import frappe.share
 from frappe.database.query import Engine
 from frappe.model import default_fields, table_fields
 from frappe.model.meta import Meta
@@ -67,7 +68,9 @@ class TestChildPermissionContext(unittest.TestCase):
 		)
 		self.metadata = {"Parent": self.parent, "Line": self.child, "Other": self.other}
 		context.enter_context(patch.object(frappe, "get_meta", side_effect=self.metadata.__getitem__))
-		context.enter_context(patch.object(frappe, "get_roles", return_value=["Reader"]))
+		self.roles = context.enter_context(patch.object(frappe, "get_roles", return_value=["Reader"]))
+		self.shared_docs = {}
+		context.enter_context(patch.object(frappe.share, "get_shared", side_effect=self.get_shared))
 		context.enter_context(patch.object(frappe, "only_has_select_perm", return_value=False))
 		context.enter_context(patch("frappe.database.query._", side_effect=lambda text: text))
 		context.enter_context(patch.object(frappe, "throw", side_effect=self.throw))
@@ -87,6 +90,11 @@ class TestChildPermissionContext(unittest.TestCase):
 			check(*args)
 		except frappe.PermissionError as exc:
 			self.fail(f"Authorized native table access was rejected: {exc}")
+
+	def get_shared(self, doctype, user=None, rights=None, *, filters=None, limit=None):
+		if filters:
+			raise AssertionError("This fixture does not model document-share filters")
+		return self.shared_docs.get((doctype, user, tuple(rights or ["read"])), [])[:limit]
 
 	def test_contextless_child_selection_cannot_skip_inherited_field_permissions(self):
 		with self.assertRaises(frappe.PermissionError):
@@ -168,6 +176,54 @@ class TestChildPermissionContext(unittest.TestCase):
 					self.parent.get_field("lines").permlevel = 1
 					with self.assertRaises(frappe.PermissionError):
 						check("Line", "public_value")
+
+	def test_shared_only_parent_allows_level_zero_child_fields(self):
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		for fieldtype in ("Table", "Table MultiSelect"):
+			for check in (
+				self.engine.check_select_field_permission,
+				self.engine.check_filter_field_permission,
+			):
+				with self.subTest(fieldtype=fieldtype, check=check.__name__):
+					self.parent.get_field("lines").fieldtype = fieldtype
+					self.assert_accessible(check, "Line", "public_value")
+
+	def test_share_does_not_grant_elevated_parent_table_access(self):
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		self.parent.get_field("lines").permlevel = 1
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "public_value")
+
+	def test_share_does_not_grant_elevated_child_field_access(self):
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "private_value")
+
+	def test_without_role_or_read_share_child_value_fields_stay_denied(self):
+		self.roles.return_value = []
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "public_value")
+
+	def test_another_user_or_doctype_or_write_only_share_cannot_grant_child_read(self):
+		self.roles.return_value = []
+		self.shared_docs = {
+			("Parent", "another@example.invalid", ("read",)): ["ANOTHER-USER-PARENT"],
+			("Other", "reader@example.invalid", ("read",)): ["OTHER-DOCTYPE"],
+			("Parent", "reader@example.invalid", ("write",)): ["WRITE-ONLY-PARENT"],
+		}
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "public_value")
 
 	def test_inferred_child_with_empty_parent_permissions_fails_closed(self):
 		self.parent.permissions = []
