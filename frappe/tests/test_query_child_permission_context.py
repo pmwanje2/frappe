@@ -116,6 +116,26 @@ class TestChildPermissionContext(unittest.TestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.engine.check_select_field_permission("Line", "public_value")
 
+	def test_computed_relationship_does_not_hide_qualified_child_ambiguity(self):
+		computed = field("computed_lines", "Table", options="Line")
+		computed.is_virtual = 1
+		self.parent.fields.append(computed)
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "public_value")
+
+	def test_computed_only_relationship_cannot_authorize_stored_child_query(self):
+		self.parent.get_field("lines").is_virtual = 1
+		for check in (self.engine.check_select_field_permission, self.engine.check_filter_field_permission):
+			with self.subTest(check=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("Line", "public_value")
+
+	def test_child_optional_fields_keep_existing_bypass(self):
+		self.engine.doctype = "Other"
+		self.engine.check_select_field_permission("Line", "_user_tags")
+
 	def test_hidden_parent_table_field_cannot_be_avoided(self):
 		self.parent.get_field("lines").permlevel = 1
 		with self.assertRaises(frappe.PermissionError):
