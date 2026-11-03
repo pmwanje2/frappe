@@ -1033,11 +1033,12 @@ class Engine:
 			parent_doctype = self.parent_doctype if doctype == self.doctype else self.doctype
 			parent_meta = frappe.get_meta(parent_doctype) if parent_doctype else None
 			table_fields = (
-				[df for df in parent_meta.get_table_fields() if df.options == doctype]
+				[df for df in parent_meta.get_table_fields(include_computed=True) if df.options == doctype]
 				if parent_meta and not parent_meta.istable
 				else []
 			)
-			if len(table_fields) != 1:
+			# A qualified stored-table reference cannot resolve a computed relationship.
+			if len(table_fields) != 1 or table_fields[0].is_virtual:
 				self._raise_permission_error(doctype)
 			parent_field = table_fields[0]
 
