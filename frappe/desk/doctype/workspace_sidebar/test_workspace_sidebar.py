@@ -4,7 +4,6 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
 from frappe.model.delete_doc import get_dynamic_linked_docs, get_linked_docs
 from frappe.tests import IntegrationTestCase
 
@@ -66,15 +65,17 @@ class IntegrationTestWorkspaceSidebar(IntegrationTestCase):
 	def test_business_reference_still_blocks_report_retirement(self):
 		report = self.make_report()
 		self.make_archive(report)
-		reference_type = new_doctype(
-			fields=[{"fieldname": "report", "fieldtype": "Link", "options": "Report"}]
+		reference = frappe.get_doc(
+			{
+				"doctype": "Number Card",
+				"label": "Report retirement reference " + frappe.generate_hash(length=10),
+				"type": "Report",
+				"report_name": report.name,
+				"function": "Count",
+				"report_field": "name",
+			}
 		).insert()
-		self.addCleanup(frappe.delete_doc, "DocType", reference_type.name, force=True)
-		reference = frappe.get_doc({"doctype": reference_type.name, "report": report.name}).insert()
 		self.addCleanup(frappe.delete_doc, reference.doctype, reference.name)
-		# The schema was created inside this test, after earlier report deletions
-		# populated the request-local link-field inventory.
-		frappe.flags.link_fields = {}
 
 		links = get_linked_docs(report) + get_dynamic_linked_docs(report)
 		self.assertEqual(
