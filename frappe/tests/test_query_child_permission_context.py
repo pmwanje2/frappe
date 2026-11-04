@@ -330,6 +330,12 @@ class TestChildPermissionContext(unittest.TestCase):
 		self.parent.get_field("lines").permlevel = 1
 		self.assert_dot_denied("public_value")
 
+	def test_dot_optional_child_field_cannot_bypass_elevated_table(self):
+		self.prepare_dot_query()
+		self.child.fields.append(field("_user_tags"))
+		self.parent.get_field("lines").permlevel = 1
+		self.assert_dot_denied("_user_tags")
+
 	def test_dot_share_only_cannot_access_elevated_child_field(self):
 		self.prepare_dot_query()
 		self.roles.return_value = []
