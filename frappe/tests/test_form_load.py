@@ -10,6 +10,8 @@ from frappe.tests import IntegrationTestCase
 from frappe.tests.test_helpers import setup_for_tests
 from frappe.utils.file_manager import save_file
 
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
+
 
 class TestFormLoad(IntegrationTestCase):
 	def test_load(self):
@@ -388,6 +390,7 @@ class TestVersionCurrencyPermissions(IntegrationTestCase):
 	"""Historical financial values must obey the same read levels as the loaded form."""
 
 	def setUp(self):
+		super().setUp()
 		self.child = new_doctype(
 			istable=1,
 			permissions=[],
@@ -405,13 +408,13 @@ class TestVersionCurrencyPermissions(IntegrationTestCase):
 				{"fieldname": "items", "label": "Items", "fieldtype": "Table", "options": self.child.name},
 			],
 			permissions=[
-				{"role": "Blogger", "read": 1, "write": 1, "create": 1},
+				{"role": "All", "read": 1, "write": 1, "create": 1},
 				{"role": "Website Manager", "read": 1, "write": 1, "create": 1},
 				{"role": "Website Manager", "permlevel": 1, "read": 1, "write": 1},
 			],
 		).insert()
 		self.addCleanup(self.dt.delete)
-		for email, role in (("test@example.com", "Blogger"), ("test1@example.com", "Website Manager")):
+		for email, role in (("test1@example.com", "Website Manager"),):
 			user = frappe.get_doc("User", email)
 			if role not in frappe.get_roles(user.name):
 				user.add_roles(role)
@@ -420,6 +423,7 @@ class TestVersionCurrencyPermissions(IntegrationTestCase):
 	def _changed_document(self):
 		with self.set_user("test1@example.com"):
 			doc = frappe.get_doc(doctype=self.dt.name, description="before", amount=731.29)
+			self.assertIn(1, doc.get_permlevel_access("read"))
 			doc.append("items", {"description": "changed row", "amount": 731.29})
 			doc.append("items", {"description": "removed row", "amount": 731.29})
 			doc.insert()
@@ -432,6 +436,7 @@ class TestVersionCurrencyPermissions(IntegrationTestCase):
 			doc.save(ignore_version=False)
 		with self.set_user("test@example.com"):
 			doc = frappe.get_doc(doc.doctype, doc.name)
+			self.assertNotIn(1, doc.get_permlevel_access("read"))
 			doc.description = "maintenance update"
 			doc.save(ignore_version=False)
 		return doc

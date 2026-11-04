@@ -1,0 +1,15 @@
+Starting test run with parameters: site=pr-f2.test, module=frappe.tests.test_form_load, verbose=False, tests=(), force=False, profile=False, failfast=False, case=TestVersionCurrencyPermissions, skip_before_tests=False, debug=False, selected_categories=[]
+View detailed logs (using --verbose): /home/frappe/frappe-bench/logs/frappe.testing.log
+
+Running 3 integration tests for frappe
+
+frappe.tests.test_form_load.TestVersionCurrencyPermissions
+   [32m ✔ [0m test_get_versions_keeps_permitted_fields
+   [32m ✔ [0m test_get_versions_strips_child_currency_in_changed_added_and_removed
+   [32m ✔ [0m test_get_versions_strips_fields_without_read_permlevel
+
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.167s
+
+OK
