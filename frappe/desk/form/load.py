@@ -255,15 +255,12 @@ def get_versions(doc: "Document") -> list[dict]:
 		order_by="creation desc",
 	)
 
-	if frappe.session.user == "Administrator":
-		return versions
-
 	# child tables are governed by the parent's permission rows, so one set covers both
-	permitted = readable_permlevels(doc.meta)
-	if permitted is None:
-		return versions
+	permitted = None if frappe.session.user == "Administrator" else readable_permlevels(doc.meta)
 
-	allowed_parent_fields = {df.fieldname for df in doc.meta.fields if df.permlevel in permitted}
+	allowed_parent_fields = {
+		df.fieldname for df in doc.meta.fields if permitted is None or df.permlevel in permitted
+	}
 	allowed_parent_fields.update(STANDARD_VERSIONED_FIELDS)
 	allowed_child_fields = {}
 	for table_field in doc.meta.get_table_fields():
@@ -273,7 +270,7 @@ def get_versions(doc: "Document") -> list[dict]:
 		allowed_child_fields[table_field.fieldname] = {
 			df.fieldname
 			for df in (frappe.get_meta(table_field.options).fields or [])
-			if df.permlevel in permitted
+			if permitted is None or df.permlevel in permitted
 		}
 
 	def filter_changed(logs):
@@ -307,16 +304,17 @@ def get_versions(doc: "Document") -> list[dict]:
 	for version in versions:
 		try:
 			data = frappe.parse_json(version.data or "{}")
-		except ValueError:
+			if not isinstance(data, dict):
+				continue
+			if permitted is not None:
+				data["changed"] = filter_changed(data.get("changed"))
+				data["added"] = filter_rows(data.get("added"))
+				data["removed"] = filter_rows(data.get("removed"))
+				data["row_changed"] = filter_row_changed(data.get("row_changed"))
+			version.data = json.dumps(data)
+		except ValueError, TypeError, KeyError, IndexError:
+			# Malformed historical diffs must neither escape raw nor break form loading.
 			continue
-		if not isinstance(data, dict):
-			continue
-
-		data["changed"] = filter_changed(data.get("changed"))
-		data["added"] = filter_rows(data.get("added"))
-		data["removed"] = filter_rows(data.get("removed"))
-		data["row_changed"] = filter_row_changed(data.get("row_changed"))
-		version.data = json.dumps(data)
 		readable_versions.append(version)
 
 	return readable_versions

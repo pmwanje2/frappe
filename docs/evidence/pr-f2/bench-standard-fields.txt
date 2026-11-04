@@ -1,0 +1,14 @@
+Starting test run with parameters: site=pr-f2.test, module=frappe.tests.test_form_load, verbose=False, tests=(), force=False, profile=False, failfast=False, case=TestStandardFieldsInVersions, skip_before_tests=False, debug=False, selected_categories=[]
+View detailed logs (using --verbose): /home/frappe/frappe-bench/logs/frappe.testing.log
+
+Running 2 integration tests for frappe
+
+frappe.tests.test_form_load.TestStandardFieldsInVersions
+   [32m ✔ [0m test_docstatus_change_is_kept_for_administrator
+   [32m ✔ [0m test_docstatus_change_survives_permlevel_filtering
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.399s
+
+OK
