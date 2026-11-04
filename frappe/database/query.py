@@ -1026,9 +1026,26 @@ class Engine:
 		if fieldname in OPTIONAL_FIELDS:
 			return
 
-		# Skip field permission check if doctype has no permissions defined
 		meta = frappe.get_meta(doctype)
+		parent_field = None
+		if meta.istable and not parent_doctype:
+			# Qualified child references must not skip inherited parent permissions.
+			parent_doctype = self.parent_doctype if doctype == self.doctype else self.doctype
+			parent_meta = frappe.get_meta(parent_doctype) if parent_doctype else None
+			table_fields = (
+				[df for df in parent_meta.get_table_fields(include_computed=True) if df.options == doctype]
+				if parent_meta and not parent_meta.istable
+				else []
+			)
+			# A qualified stored-table reference cannot resolve a computed relationship.
+			if len(table_fields) != 1 or table_fields[0].is_virtual:
+				self._raise_permission_error(doctype)
+			parent_field = table_fields[0]
+
 		if not meta.get_permissions(parenttype=parent_doctype):
+			if parent_field:
+				self._raise_permission_error(doctype)
+			# Preserve the existing behavior for non-inferred contexts.
 			return
 
 		# Don't allow querying child table fields if user has only "select" permission
@@ -1040,6 +1057,15 @@ class Engine:
 				),
 				frappe.PermissionError,
 			)
+
+		# Native field resolution below handles level-0 read shares.
+		if (
+			parent_field
+			and parent_field.permlevel > 0
+			and parent_field.permlevel
+			not in parent_meta.get_permlevel_access(permission_type, user=self.user)
+		):
+			self._raise_permission_error(doctype)
 
 		permission_source = (
 			self._get_filterable_fields if for_filtering else self._get_cached_permitted_fields
