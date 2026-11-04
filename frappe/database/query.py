@@ -1051,7 +1051,7 @@ class Engine:
 		if not self.apply_permissions:
 			return
 
-		if fieldname in OPTIONAL_FIELDS:
+		if fieldname in OPTIONAL_FIELDS and not parent_fieldname:
 			return
 
 		meta = frappe.get_meta(doctype)
