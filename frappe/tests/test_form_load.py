@@ -384,6 +384,101 @@ class TestVersionPermlevelFiltering(IntegrationTestCase):
 		self.assertIn("is_primary", self._child_fields(versions, "email_ids"))
 
 
+class TestVersionCurrencyPermissions(IntegrationTestCase):
+	"""Historical financial values must obey the same read levels as the loaded form."""
+
+	def setUp(self):
+		self.child = new_doctype(
+			istable=1,
+			permissions=[],
+			fields=[
+				{"fieldname": "description", "label": "Description", "fieldtype": "Data"},
+				{"fieldname": "amount", "label": "Amount", "fieldtype": "Currency", "permlevel": 1},
+			],
+		).insert()
+		self.addCleanup(self.child.delete)
+		self.dt = new_doctype(
+			track_changes=1,
+			fields=[
+				{"fieldname": "description", "label": "Description", "fieldtype": "Data"},
+				{"fieldname": "amount", "label": "Amount", "fieldtype": "Currency", "permlevel": 1},
+				{"fieldname": "items", "label": "Items", "fieldtype": "Table", "options": self.child.name},
+			],
+			permissions=[
+				{"role": "Blogger", "read": 1, "write": 1, "create": 1},
+				{"role": "Website Manager", "read": 1, "write": 1, "create": 1},
+				{"role": "Website Manager", "permlevel": 1, "read": 1, "write": 1},
+			],
+		).insert()
+		self.addCleanup(self.dt.delete)
+		for email, role in (("test@example.com", "Blogger"), ("test1@example.com", "Website Manager")):
+			user = frappe.get_doc("User", email)
+			if role not in frappe.get_roles(user.name):
+				user.add_roles(role)
+				self.addCleanup(user.remove_roles, role)
+
+	def _changed_document(self):
+		with self.set_user("test1@example.com"):
+			doc = frappe.get_doc(doctype=self.dt.name, description="before", amount=731.29)
+			doc.append("items", {"description": "changed row", "amount": 731.29})
+			doc.append("items", {"description": "removed row", "amount": 731.29})
+			doc.insert()
+			doc.description = "after"
+			doc.amount = 842.37
+			doc.items[0].amount = 842.37
+			doc.items[0].description = "updated row"
+			doc.remove(doc.items[1])
+			doc.append("items", {"description": "added row", "amount": 842.37})
+			doc.save(ignore_version=False)
+		with self.set_user("test@example.com"):
+			doc = frappe.get_doc(doc.doctype, doc.name)
+			doc.description = "maintenance update"
+			doc.save(ignore_version=False)
+		return doc
+
+	def _load_versions(self, doc, user):
+		with self.set_user(user):
+			frappe.response.docs = []
+			getdoc(doc.doctype, doc.name)
+			return frappe.response.docinfo.versions
+
+	def test_get_versions_strips_fields_without_read_permlevel(self):
+		doc = self._changed_document()
+		versions = self._load_versions(doc, "test@example.com")
+		self.assertTrue(versions)
+		for version in versions:
+			self.assertNotIn('"amount"', version.data)
+			self.assertNotIn("731.29", version.data)
+			self.assertNotIn("842.37", version.data)
+		self.assertIn("maintenance update", frappe.as_json(versions))
+
+	def test_get_versions_keeps_permitted_fields(self):
+		doc = self._changed_document()
+		versions = self._load_versions(doc, "test1@example.com")
+		changes = [change for v in versions for change in frappe.parse_json(v.data).get("changed", [])]
+		self.assertIn("amount", [change[0] for change in changes])
+		self.assertIn("731.29", frappe.as_json(versions))
+		self.assertIn("842.37", frappe.as_json(versions))
+		self.assertIn("maintenance update", frappe.as_json(versions))
+
+	def test_get_versions_strips_child_currency_in_changed_added_and_removed(self):
+		doc = self._changed_document()
+		versions = self._load_versions(doc, "test@example.com")
+		sections = {key: [] for key in ("row_changed", "added", "removed")}
+		for version in versions:
+			for key in sections:
+				sections[key].extend(frappe.parse_json(version.data).get(key, []))
+		for key, rows in sections.items():
+			with self.subTest(section=key):
+				self.assertTrue(rows)
+				self.assertNotIn("amount", frappe.as_json(rows))
+				self.assertNotIn("731.29", frappe.as_json(rows))
+				self.assertNotIn("842.37", frappe.as_json(rows))
+		self.assertIn("updated row", frappe.as_json(sections))
+		self.assertIn("added row", frappe.as_json(sections))
+		self.assertIn("removed row", frappe.as_json(sections))
+
+
 class TestStandardFieldsInVersions(IntegrationTestCase):
 	"""get_diff records `name` and `docstatus` in `changed`, but neither is a DocField, so
 	the permlevel filter in get_versions has to allow them through on its own. Without that

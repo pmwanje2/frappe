@@ -1,0 +1,184 @@
+test_get_versions_does_not_return_untracked_history (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_does_not_return_untracked_history) ... ok
+test_get_versions_filters_child_changes_additions_and_removals (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_filters_child_changes_additions_and_removals) ... ok
+test_get_versions_keeps_permitted_fields (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_keeps_permitted_fields) ... ok
+test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) ... 
+  test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='changed') ... FAIL
+  test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='row_changed') ... FAIL
+  test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='added') ... FAIL
+  test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='removed') ... FAIL
+test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) ... 
+  test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='{"changed": "842.37"') ... FAIL
+  test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='[]') ... FAIL
+  test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='null') ... FAIL
+test_get_versions_omits_unparseable_data_without_permission_rows (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_without_permission_rows) ... FAIL
+test_get_versions_preserves_administrator_data (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_preserves_administrator_data) ... ok
+test_get_versions_strips_fields_without_read_permlevel (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_strips_fields_without_read_permlevel) ... ok
+
+======================================================================
+FAIL: test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='changed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 130, in test_get_versions_omits_malformed_diff_sections
+    versions = get_versions(self.doc)
+  File "/workspace/frappe/desk/form/load.py", line 315, in get_versions
+    data["changed"] = filter_changed(data.get("changed"))
+                      ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/frappe/desk/form/load.py", line 280, in filter_changed
+    return [log for log in logs or [] if log and log[0] in allowed_parent_fields]
+                           ^^^^^^^^^^
+TypeError: 'float' object is not iterable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 132, in test_get_versions_omits_malformed_diff_sections
+    self.fail(f"Malformed historical data must be omitted, not break form loading: {exc}")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Malformed historical data must be omitted, not break form loading: 'float' object is not iterable
+
+======================================================================
+FAIL: test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='row_changed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 130, in test_get_versions_omits_malformed_diff_sections
+    versions = get_versions(self.doc)
+  File "/workspace/frappe/desk/form/load.py", line 318, in get_versions
+    data["row_changed"] = filter_row_changed(data.get("row_changed"))
+                          ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/frappe/desk/form/load.py", line 290, in filter_row_changed
+    nested = [entry for entry in (log[3] or []) if entry and entry[0] in allowed]
+                                  ^^^^^^^^^^^^
+TypeError: 'float' object is not iterable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 132, in test_get_versions_omits_malformed_diff_sections
+    self.fail(f"Malformed historical data must be omitted, not break form loading: {exc}")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Malformed historical data must be omitted, not break form loading: 'float' object is not iterable
+
+======================================================================
+FAIL: test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='added')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 130, in test_get_versions_omits_malformed_diff_sections
+    versions = get_versions(self.doc)
+  File "/workspace/frappe/desk/form/load.py", line 316, in get_versions
+    data["added"] = filter_rows(data.get("added"))
+                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/workspace/frappe/desk/form/load.py", line 298, in filter_rows
+    if len(log) < 2:
+       ~~~^^^^^
+TypeError: object of type 'NoneType' has no len()
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 132, in test_get_versions_omits_malformed_diff_sections
+    self.fail(f"Malformed historical data must be omitted, not break form loading: {exc}")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Malformed historical data must be omitted, not break form loading: object of type 'NoneType' has no len()
+
+======================================================================
+FAIL: test_get_versions_omits_malformed_diff_sections (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_malformed_diff_sections) (section='removed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 130, in test_get_versions_omits_malformed_diff_sections
+    versions = get_versions(self.doc)
+  File "/workspace/frappe/desk/form/load.py", line 317, in get_versions
+    data["removed"] = filter_rows(data.get("removed"))
+                      ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/frappe/desk/form/load.py", line 297, in filter_rows
+    for log in logs or []:
+               ^^^^^^^^^^
+TypeError: 'float' object is not iterable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 132, in test_get_versions_omits_malformed_diff_sections
+    self.fail(f"Malformed historical data must be omitted, not break form loading: {exc}")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Malformed historical data must be omitted, not break form loading: 'float' object is not iterable
+
+======================================================================
+FAIL: test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='{"changed": "842.37"')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 118, in test_get_versions_omits_unparseable_data_for_all_readers
+    self.assertEqual(get_versions(self.doc), [])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [{'name': 'VERSION-1', 'owner': 'finance@e[67 chars]7"'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'name': 'VERSION-1', 'owner': 'finance@example.test', 'creation': '2026-11-04', 'data': '{"changed": "842.37"'}
+
++ []
+- [{'creation': '2026-11-04',
+-   'data': '{"changed": "842.37"',
+-   'name': 'VERSION-1',
+-   'owner': 'finance@example.test'}]
+
+======================================================================
+FAIL: test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='[]')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 118, in test_get_versions_omits_unparseable_data_for_all_readers
+    self.assertEqual(get_versions(self.doc), [])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [{'name': 'VERSION-1', 'owner': 'finance@e[49 chars][]'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'name': 'VERSION-1', 'owner': 'finance@example.test', 'creation': '2026-11-04', 'data': '[]'}
+
++ []
+- [{'creation': '2026-11-04',
+-   'data': '[]',
+-   'name': 'VERSION-1',
+-   'owner': 'finance@example.test'}]
+
+======================================================================
+FAIL: test_get_versions_omits_unparseable_data_for_all_readers (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_for_all_readers) (user='Administrator', raw='null')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 118, in test_get_versions_omits_unparseable_data_for_all_readers
+    self.assertEqual(get_versions(self.doc), [])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [{'name': 'VERSION-1', 'owner': 'finance@e[51 chars]ll'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'name': 'VERSION-1', 'owner': 'finance@example.test', 'creation': '2026-11-04', 'data': 'null'}
+
++ []
+- [{'creation': '2026-11-04',
+-   'data': 'null',
+-   'name': 'VERSION-1',
+-   'owner': 'finance@example.test'}]
+
+======================================================================
+FAIL: test_get_versions_omits_unparseable_data_without_permission_rows (frappe.tests.test_version_payload_permissions.TestVersionPayloadPermissions.test_get_versions_omits_unparseable_data_without_permission_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/test_version_payload_permissions.py", line 138, in test_get_versions_omits_unparseable_data_without_permission_rows
+    self.assertEqual(get_versions(self.doc), [])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [{'name': 'VERSION-1', 'owner': 'finance@e[67 chars]7"'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'name': 'VERSION-1', 'owner': 'finance@example.test', 'creation': '2026-11-04', 'data': '{"changed": "842.37"'}
+
++ []
+- [{'creation': '2026-11-04',
+-   'data': '{"changed": "842.37"',
+-   'name': 'VERSION-1',
+-   'owner': 'finance@example.test'}]
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.015s
+
+FAILED (failures=8)

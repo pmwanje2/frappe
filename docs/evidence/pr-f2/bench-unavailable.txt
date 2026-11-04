@@ -1,0 +1,23 @@
+setUpClass (frappe.tests.test_form_load.TestVersionCurrencyPermissions) ... ERROR
+
+======================================================================
+ERROR: setUpClass (frappe.tests.test_form_load.TestVersionCurrencyPermissions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/frappe/tests/classes/integration_test_case.py", line 42, in setUpClass
+    super().setUpClass()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/workspace/frappe/tests/classes/unit_test_case.py", line 53, in setUpClass
+    frappe.set_user("Administrator")
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/workspace/frappe/__init__.py", line 385, in set_user
+    local.session.user = username
+    ^^^^^^^^^^^^^
+  File "/workspace/frappe/utils/local.py", line 28, in __getattribute__
+    raise AttributeError(name)
+AttributeError: session
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.001s
+
+FAILED (errors=1)
