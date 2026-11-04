@@ -15,6 +15,7 @@ import frappe.share
 from frappe.database.query import Engine
 from frappe.model import default_fields, table_fields
 from frappe.model.meta import Meta
+from frappe.query_builder.builder import MariaDB
 
 
 class Metadata(SimpleNamespace):
@@ -41,6 +42,9 @@ class Metadata(SimpleNamespace):
 
 	def get_field(self, fieldname):
 		return next((df for df in self.fields if df.fieldname == fieldname), None)
+
+	def has_field(self, fieldname):
+		return self.get_field(fieldname) is not None
 
 
 def field(fieldname, fieldtype="Data", **kwargs):
@@ -265,6 +269,114 @@ class TestChildPermissionContext(unittest.TestCase):
 	def test_explicit_permission_bypass_behavior_is_not_changed(self):
 		self.engine.apply_permissions = False
 		self.engine.check_select_field_permission("Line", "private_value")
+
+	def prepare_dot_query(self):
+		qb_patch = patch.object(frappe, "qb", MariaDB)
+		qb_patch.start()
+		self.addCleanup(qb_patch.stop)
+		self.engine.table = MariaDB.DocType("Parent")
+		self.engine.query = MariaDB.from_(self.engine.table)
+		self.engine.function_aliases = set()
+		self.engine.field_aliases = set()
+		self.engine.db_query_compat = False
+
+	def assert_dot_denied(self, fieldname):
+		# SELECT keeps native field omission; predicates/group/order must refuse.
+		self.engine.apply_fields([f"lines.{fieldname}"])
+		self.assertEqual(self.engine.query.get_sql(), "SELECT `name` FROM `tabParent`")
+		for check in (
+			self.engine._validate_and_prepare_filter_field,
+			self.engine._validate_group_by,
+			self.engine._validate_order_by,
+		):
+			with self.subTest(clause=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check(f"lines.{fieldname}")
+
+	def assert_dot_allowed(self, fieldname):
+		self.engine.apply_fields([f"lines.{fieldname} as child_value"])
+		self.engine.apply_group_by(f"lines.{fieldname}")
+		self.engine.apply_order_by(f"lines.{fieldname} desc")
+		criterion_field = self.engine._validate_and_prepare_filter_field(f"lines.{fieldname}")
+		self.engine.query = self.engine.query.where(criterion_field == "allowed")
+		self.assertEqual(
+			self.engine.query.get_sql(),
+			f"SELECT `tabLine`.`{fieldname}` `child_value` FROM `tabParent` "
+			"LEFT JOIN `tabLine` ON `tabLine`.`parent`=`tabParent`.`name` "
+			"AND `tabLine`.`parenttype`='Parent' AND `tabLine`.`parentfield`='lines' "
+			f"WHERE `tabLine`.`{fieldname}`='allowed' "
+			f"GROUP BY `tabLine`.`{fieldname}` ORDER BY `tabLine`.`{fieldname}` DESC",
+		)
+
+	def test_dot_child_level_one_field_denied_without_level_one_read(self):
+		self.prepare_dot_query()
+		self.assert_dot_denied("private_value")
+
+	def test_dot_share_only_allows_level_zero_child(self):
+		self.prepare_dot_query()
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		self.assert_dot_allowed("public_value")
+
+	def test_dot_share_only_cannot_access_elevated_table(self):
+		self.prepare_dot_query()
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		self.parent.get_field("lines").permlevel = 1
+		self.assert_dot_denied("public_value")
+
+	def test_dot_level_zero_role_cannot_access_elevated_table(self):
+		self.prepare_dot_query()
+		self.parent.get_field("lines").permlevel = 1
+		self.assert_dot_denied("public_value")
+
+	def test_dot_optional_child_field_cannot_bypass_elevated_table(self):
+		self.prepare_dot_query()
+		self.child.fields.append(field("_user_tags"))
+		self.parent.get_field("lines").permlevel = 1
+		self.assert_dot_denied("_user_tags")
+
+	def test_dot_share_only_cannot_access_elevated_child_field(self):
+		self.prepare_dot_query()
+		self.roles.return_value = []
+		self.shared_docs[("Parent", "reader@example.invalid", ("read",))] = ["SHARED-PARENT"]
+		self.assert_dot_denied("private_value")
+
+	def test_dot_authorized_role_keeps_elevated_table_and_child(self):
+		self.prepare_dot_query()
+		self.parent.get_field("lines").permlevel = 1
+		self.parent.permissions.append(frappe._dict(role="Reader", read=1, permlevel=1))
+		self.assert_dot_allowed("private_value")
+
+	def test_dot_named_relationship_does_not_guess_another_table(self):
+		self.prepare_dot_query()
+		other_lines = field("other_lines", "Table", options="Line")
+		other_lines.permlevel = 1
+		self.parent.fields.append(other_lines)
+		self.assert_dot_allowed("public_value")
+		for check in (
+			self.engine._validate_and_prepare_filter_field,
+			self.engine._validate_group_by,
+			self.engine._validate_order_by,
+		):
+			with self.subTest(clause=check.__name__):
+				with self.assertRaises(frappe.PermissionError):
+					check("other_lines.public_value")
+
+	def test_dot_public_aggregate_and_group_order_aliases_are_preserved(self):
+		self.prepare_dot_query()
+		self.engine.apply_fields(
+			["lines.public_value as child_value", {"SUM": "`tabLine`.`public_value`", "as": "total"}]
+		)
+		self.engine.apply_group_by("child_value")
+		self.engine.apply_order_by("total desc, child_value asc")
+		self.assertEqual(
+			self.engine.query.get_sql(),
+			"SELECT `tabLine`.`public_value` `child_value`,SUM(`tabLine`.`public_value`) `total` "
+			"FROM `tabParent` LEFT JOIN `tabLine` ON `tabLine`.`parent`=`tabParent`.`name` "
+			"AND `tabLine`.`parenttype`='Parent' AND `tabLine`.`parentfield`='lines' "
+			"GROUP BY `child_value` ORDER BY `total` DESC,`child_value` ASC",
+		)
 
 
 if __name__ == "__main__":
