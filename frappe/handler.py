@@ -14,6 +14,7 @@ import frappe.utils
 from frappe import _, is_whitelisted, ping
 from frappe.core.doctype.file.utils import find_file_by_url, get_safe_file_name
 from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
+from frappe.model.document import Document
 from frappe.monitor import add_data_to_monitor
 from frappe.permissions import check_doctype_permission
 from frappe.utils import cint, get_files_path
@@ -64,6 +65,7 @@ def handle():
 
 def execute_cmd(cmd, from_async=False):
 	"""execute a request as python module"""
+	is_workflow_response = cmd == "frappe.model.workflow.apply_workflow"
 	cmd = frappe.override_whitelisted_method(cmd)
 
 	# via server script
@@ -83,7 +85,11 @@ def execute_cmd(cmd, from_async=False):
 		is_whitelisted(method)
 		is_valid_http_method(method)
 
-	return frappe.call(method, **frappe.form_dict)
+	result = frappe.call(method, **frappe.form_dict)
+	# Bind privacy to the original route, including app overrides.
+	if is_workflow_response and isinstance(result, Document):
+		return result.copy_with_fieldlevel_read_permissions()
+	return result
 
 
 def run_server_script(server_script):
