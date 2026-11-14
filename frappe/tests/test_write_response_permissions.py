@@ -17,8 +17,8 @@ import frappe.api.v1 as v1
 import frappe.api.v2 as v2
 import frappe.client
 import frappe.handler
-import frappe.model.workflow as workflow
 import frappe.model.document as document_module
+import frappe.model.workflow as workflow
 import frappe.translate
 from frappe.model.docstatus import DocStatus
 from frappe.model.document import Document
@@ -144,7 +144,8 @@ class TestWriteResponsePermissions(unittest.TestCase):
 		# Native 16.56 reconstructs response copies through the controller registry.
 		self.context.enter_context(
 			patch.object(
-				document_module, "get_controller",
+				document_module,
+				"get_controller",
 				side_effect=lambda doctype: WriteResponseDocument if doctype == self.meta.name else Document,
 			)
 		)
