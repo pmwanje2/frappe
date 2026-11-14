@@ -176,16 +176,37 @@ def add_comments(doc, docinfo):
 
 
 def get_milestones(doctype, name, start=0, limit=20):
+	from frappe.desk.form.activity import readable_permlevels
+	from frappe.model.utils.mask import mask_field_value
+
+	meta = frappe.get_meta(doctype)
+	permitted = None if frappe.session.user == "Administrator" else readable_permlevels(meta)
+	masked = {df.fieldname: df for df in meta.get_masked_fields()}
+	readable_fields = [df.fieldname for df in meta.fields if permitted is None or df.permlevel in permitted]
+	if not readable_fields:
+		return []
+	# Filter before LIMIT so activity pagination cannot stop at an unreadable page.
+	# Offsets count the permission-filtered SQL rows, before timeline presentation.
 	# Newest first and paged: a long-lived document accumulates these without end. The page runs
 	# larger than the one on versions because a milestone row is four short columns, not a JSON diff.
-	return frappe.get_all(
+	milestones = frappe.get_all(
 		"Milestone",
 		fields=["name", "creation", "owner", "track_field", "value"],
-		filters=dict(reference_type=doctype, reference_name=str(name)),
+		filters=dict(reference_type=doctype, reference_name=str(name), track_field=["in", readable_fields]),
 		limit_start=start,
 		limit=limit,
 		order_by="creation desc",
 	)
+
+	readable = []
+	for milestone in milestones:
+		df = meta.get_field(milestone.track_field)
+		if not df or (permitted is not None and df.permlevel not in permitted):
+			continue
+		if masked_field := masked.get(df.fieldname):
+			milestone.value = mask_field_value(masked_field, milestone.value)
+		readable.append(milestone)
+	return readable
 
 
 def get_attachments(dt, dn):
@@ -243,13 +264,109 @@ def get_filtered_attachments(dt: str, dn: str | int, filters: str):
 def get_versions(doc: "Document") -> list[dict]:
 	if not doc.meta.track_changes:
 		return []
-	return frappe.get_all(
+
+	from frappe.core.doctype.version.version import STANDARD_VERSIONED_FIELDS
+	from frappe.desk.form.activity import readable_permlevels
+	from frappe.model.utils.mask import mask_field_value
+
+	versions = frappe.get_all(
 		"Version",
 		filters=dict(ref_doctype=doc.doctype, docname=str(doc.name)),
 		fields=["name", "owner", "creation", "data"],
 		limit=10,
 		order_by="creation desc",
 	)
+
+	# child tables are governed by the parent's permission rows, so one set covers both
+	permitted = None if frappe.session.user == "Administrator" else readable_permlevels(doc.meta)
+
+	allowed_parent_fields = {
+		df.fieldname for df in doc.meta.fields if permitted is None or df.permlevel in permitted
+	}
+	allowed_parent_fields.update(STANDARD_VERSIONED_FIELDS)
+	masked_parent_fields = {df.fieldname: df for df in doc.meta.get_masked_fields()}
+	masked_child_fields = {}
+	allowed_child_fields = {}
+	for table_field in doc.meta.get_table_fields():
+		# The table field's own permlevel gates the whole table, same as apply_fieldlevel_read_permissions
+		if table_field.fieldname not in allowed_parent_fields:
+			continue
+		child_meta = frappe.get_meta(table_field.options)
+		masked_child_fields[table_field.fieldname] = {
+			df.fieldname: df for df in child_meta.get_masked_fields(parenttype=doc.doctype)
+		}
+		allowed_child_fields[table_field.fieldname] = {
+			df.fieldname for df in (child_meta.fields or []) if permitted is None or df.permlevel in permitted
+		}
+
+	def mask_change(log, masked_fields):
+		if field := masked_fields.get(log[0]):
+			return [log[0], mask_field_value(field, log[1]), mask_field_value(field, log[2])]
+		return log
+
+	def filter_changed(logs):
+		return [
+			mask_change(log, masked_parent_fields)
+			for log in logs or []
+			if log and log[0] in allowed_parent_fields
+		]
+
+	def filter_row_changed(logs):
+		out = []
+		for log in logs or []:
+			if len(log) < 4:
+				continue
+			allowed = allowed_child_fields.get(log[0])
+			if allowed is None:
+				continue
+			nested = [
+				mask_change(entry, masked_child_fields[log[0]])
+				for entry in (log[3] or [])
+				if entry and entry[0] in allowed
+			]
+			if nested:
+				out.append([log[0], log[1], log[2], nested])
+		return out
+
+	def filter_rows(logs):
+		out = []
+		for log in logs or []:
+			if len(log) < 2:
+				continue
+			allowed = allowed_child_fields.get(log[0])
+			if allowed is None or not isinstance(log[1], dict):
+				continue
+			masked = masked_child_fields[log[0]]
+			out.append(
+				[
+					log[0],
+					{
+						k: mask_field_value(masked[k], v) if k in masked else v
+						for k, v in log[1].items()
+						if k in allowed
+					},
+				]
+			)
+		return out
+
+	readable_versions = []
+	for version in versions:
+		try:
+			data = frappe.parse_json(version.data or "{}")
+			if not isinstance(data, dict):
+				continue
+			if permitted is not None or masked_parent_fields or any(masked_child_fields.values()):
+				data["changed"] = filter_changed(data.get("changed"))
+				data["added"] = filter_rows(data.get("added"))
+				data["removed"] = filter_rows(data.get("removed"))
+				data["row_changed"] = filter_row_changed(data.get("row_changed"))
+			version.data = json.dumps(data)
+		except ValueError, TypeError, KeyError, IndexError, AttributeError:
+			# Malformed historical diffs must neither escape raw nor break form loading.
+			continue
+		readable_versions.append(version)
+
+	return readable_versions
 
 
 @frappe.whitelist()

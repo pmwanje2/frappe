@@ -1235,9 +1235,28 @@ class Document(_DocumentBase):
 		if frappe.session.user == "Administrator" or not self._has_fieldlevel_read_restrictions():
 			return self
 
-		doc = get_doc(copy.deepcopy(self.as_dict()))
+		doc = copy.deepcopy(self)
 		doc.apply_fieldlevel_read_permissions()
+		doc._mark_response_field_omissions(self)
 		return doc
+
+	def _mark_response_field_omissions(self, original: "Document"):
+		# Serialization supplies defaults for deleted fields, including numeric zero.
+		# A response copy must preserve the distinction between withheld and empty.
+		self.flags.response_omitted_fields = set(self.flags.response_omitted_fields or ()) | {
+			df.fieldname
+			for df in self.meta.fields
+			if df.permlevel and df.fieldname in original.__dict__ and df.fieldname not in self.__dict__
+		}
+		for table_field in self.meta.get_table_fields(include_computed=True):
+			original_children = {
+				child.name: child
+				for child in getattr(original, table_field.fieldname, None) or []
+				if child.get("name")
+			}
+			for child in getattr(self, table_field.fieldname, None) or []:
+				if original_child := original_children.get(child.get("name")):
+					child._mark_response_field_omissions(original_child)
 
 	def _has_fieldlevel_read_restrictions(self) -> bool:
 		"""Whether `apply_fieldlevel_read_permissions` would remove or mask any value for this user."""
@@ -2553,6 +2572,8 @@ class Document(_DocumentBase):
 		masked_fieldnames = self.flags.get("masked_fieldnames")
 
 		for fieldname in self.meta.get_valid_fields():
+			if fieldname in (self.flags.response_omitted_fields or ()):
+				continue
 			value = field_values.get(fieldname)
 
 			# Masked fields hold the XXXXXXXX placeholder; pass it through untouched so it is not
@@ -2702,6 +2723,8 @@ class Document(_DocumentBase):
 			self._non_computed_table_fieldnames if ignore_computed_child_tables else self._table_fieldnames
 		)
 		for fieldname in table_fieldnames:
+			if fieldname in (self.flags.response_omitted_fields or ()):
+				continue
 			children = getattr(self, fieldname, None) or []
 			doc[fieldname] = [
 				d.as_dict(
