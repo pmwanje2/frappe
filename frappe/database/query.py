@@ -962,7 +962,12 @@ class Engine:
 
 				# For permission check, the parent is the main doctype
 				parent_doctype_for_perm = self.doctype
-				self.check_filter_field_permission(target_doctype, target_fieldname, parent_doctype_for_perm)
+				self.check_filter_field_permission(
+					target_doctype,
+					target_fieldname,
+					parent_doctype_for_perm,
+					parent_fieldname=parent_fieldname,
+				)
 
 				# Delegate join logic
 				self.query = child_field_handler.apply_join(self.query, engine=self)
@@ -1003,7 +1008,10 @@ class Engine:
 							)
 							parent_doctype_for_perm = self.doctype
 							self.check_filter_field_permission(
-								df.options, target_fieldname, parent_doctype_for_perm
+								df.options,
+								target_fieldname,
+								parent_doctype_for_perm,
+								parent_fieldname=df.fieldname,
 							)
 							self.query = child_field_handler.apply_join(self.query, engine=self)
 							return child_field_handler.field
@@ -1053,11 +1061,14 @@ class Engine:
 			return
 
 		if fieldname in OPTIONAL_FIELDS and not parent_fieldname:
-			return
+			# Direct optional-field selection retains its native bypass; qualified
+			# child predicates/order/group must still authorize the parent table.
+			if not for_filtering or not frappe.get_meta(doctype).istable:
+				return
 
 		meta = frappe.get_meta(doctype)
 		parent_field = None
-		if meta.istable and (not parent_doctype or parent_fieldname):
+		if meta.istable:
 			# Named and contextless child references share inherited parent authorization.
 			parent_doctype = parent_doctype or (
 				self.parent_doctype if doctype == self.doctype else self.doctype
