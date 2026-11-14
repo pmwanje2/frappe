@@ -182,12 +182,17 @@ def get_milestones(doctype, name, start=0, limit=20):
 	meta = frappe.get_meta(doctype)
 	permitted = None if frappe.session.user == "Administrator" else readable_permlevels(meta)
 	masked = {df.fieldname: df for df in meta.get_masked_fields()}
+	readable_fields = [df.fieldname for df in meta.fields if permitted is None or df.permlevel in permitted]
+	if not readable_fields:
+		return []
+	# Filter before LIMIT so activity pagination cannot stop at an unreadable page.
+	# Offsets count the permission-filtered SQL rows, before timeline presentation.
 	# Newest first and paged: a long-lived document accumulates these without end. The page runs
 	# larger than the one on versions because a milestone row is four short columns, not a JSON diff.
 	milestones = frappe.get_all(
 		"Milestone",
 		fields=["name", "creation", "owner", "track_field", "value"],
-		filters=dict(reference_type=doctype, reference_name=str(name)),
+		filters=dict(reference_type=doctype, reference_name=str(name), track_field=["in", readable_fields]),
 		limit_start=start,
 		limit=limit,
 		order_by="creation desc",
