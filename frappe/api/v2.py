@@ -20,6 +20,7 @@ from frappe.api import discovery
 from frappe.core.doctype.server_script.server_script_utils import get_server_script_map
 from frappe.handler import is_valid_http_method, run_server_script, upload_file
 from frappe.mcp import handle as handle_mcp
+from frappe.model.document import Document
 
 PERMISSION_MAP = {
 	"GET": "read",
@@ -35,6 +36,7 @@ def handle_rpc_call(method: str, doctype: str | None = None):
 		module = load_doctype_module(doctype)
 		method = module.__name__ + "." + method
 
+	is_workflow_response = method == "frappe.model.workflow.apply_workflow"
 	method = frappe.override_whitelisted_method(method)
 
 	# via server script
@@ -50,7 +52,11 @@ def handle_rpc_call(method: str, doctype: str | None = None):
 	is_whitelisted(method)
 	is_valid_http_method(method)
 
-	return frappe.call(method, **frappe.form_dict)
+	result = frappe.call(method, **frappe.form_dict)
+	# Bind privacy to the original route, including app overrides.
+	if is_workflow_response and isinstance(result, Document):
+		return result.copy_with_fieldlevel_read_permissions()
+	return result
 
 
 def login():
