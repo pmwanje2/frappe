@@ -2466,6 +2466,8 @@ class Document(_DocumentBase):
 			self.__dict__[key] = table = []
 
 		d = self._init_child(value, key)
+		if omitted_fields := (self.flags.response_omitted_child_fields or {}).get(key):
+			d.flags.response_omitted_fields = set(d.flags.response_omitted_fields or ()) | set(omitted_fields)
 
 		if position == -1:
 			table.append(d)
