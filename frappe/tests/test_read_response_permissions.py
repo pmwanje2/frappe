@@ -113,6 +113,7 @@ class TestReadResponsePermissions(IntegrationTestCase):
 				["private_nullable", "before", None],
 			]
 		}
+		self.diff.update(added=[], removed=[], row_changed=[])
 		self.version = frappe.get_doc(
 			doctype="Version", ref_doctype=self.parent.name, docname=self.doc.name, data=json.dumps(self.diff)
 		).insert(ignore_permissions=True)
@@ -188,7 +189,7 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		doc.check_permission("read")
 		versions = get_versions(doc)
 		entry = next(v for v in versions if v.name == self.version.name)
-		self.assertEqual(json.loads(entry.data), {"changed": [self.diff["changed"][0]]})
+		self.assertEqual(json.loads(entry.data), {**self.diff, "changed": [self.diff["changed"][0]]})
 		frappe.set_user(self.users["finance"])
 		rows = frappe.get_list(
 			self.doc.doctype, filters={"name": self.doc.name}, fields=["name", "private_currency"]
@@ -225,6 +226,8 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
 		doc.apply_fieldlevel_read_permissions()
 		frappe.set_user(self.users["finance"])
+		# Rehydrate the intentionally removed child tables before trusted reuse.
+		doc.reload()
 		doc.private_currency = 27
 		doc.private_nullable = "finance update"
 		doc.save()
