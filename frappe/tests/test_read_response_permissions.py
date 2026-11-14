@@ -10,6 +10,7 @@ from unittest.mock import patch
 import frappe
 import frappe.client
 from frappe.desk.form.load import get_versions
+from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
 SENTINEL = 314159.27
@@ -118,7 +119,7 @@ class TestReadResponsePermissions(IntegrationTestCase):
 			doctype="Version", ref_doctype=self.parent.name, docname=self.doc.name, data=json.dumps(self.diff)
 		).insert(ignore_permissions=True)
 
-	def assert_private_omitted(self, result):
+	def assert_private_omitted(self, result, *, json_no_nulls=False):
 		for fieldname in (*PRIVATE, "private_computed", "private_rows"):
 			self.assertNotIn(
 				fieldname, result, f"Withheld {fieldname} must not become null, zero or an empty table"
@@ -126,8 +127,11 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		self.assertEqual(result["public_value"], "visible")
 		self.assertIn("public_zero", result)
 		self.assertEqual(result["public_zero"], 0)
-		self.assertIn("public_nullable", result)
-		self.assertIsNone(result["public_nullable"])
+		if json_no_nulls:
+			self.assertNotIn("public_nullable", result)
+		else:
+			self.assertIn("public_nullable", result)
+			self.assertIsNone(result["public_nullable"])
 		self.assertEqual(len(result["rows"]), 1)
 		self.assertEqual(result["rows"][0]["public_value"], "row")
 		self.assertNotIn("private_currency", result["rows"][0])
@@ -143,7 +147,7 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		doc.check_permission("read")
 		doc.apply_fieldlevel_read_permissions()
 		self.assert_private_omitted(doc.as_dict())
-		self.assert_private_omitted(doc.__json__())
+		self.assert_private_omitted(doc.__json__(), json_no_nulls=True)
 
 	def test_withheld_real_zero_is_omitted_while_public_zero_remains_real(self):
 		self.doc.db_set("private_currency", 0, update_modified=False)
@@ -255,3 +259,52 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		frappe.set_user(self.users["reader"])
 		with self.assertRaises(frappe.MandatoryError):
 			frappe.client.save(payload)
+
+	def test_filtered_view_keeps_withholding_reintroduced_computed_values(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		doc.apply_fieldlevel_read_permissions()
+		# A controller can materialize values after the original filtering pass.
+		# Presence in memory does not grant this actor permission to read them.
+		doc.private_currency = SENTINEL + 99
+		doc.rows[0].private_currency = SENTINEL + 99
+		self.assert_private_omitted(doc.as_dict())
+
+	def test_save_of_filtered_document_persists_server_computed_values_and_callbacks(self):
+		callbacks = []
+
+		class RecomputedReadDocument(Document):
+			def validate(self):
+				self.private_currency = SENTINEL + 1
+
+			def on_change(self):
+				frappe.db.after_commit.add(lambda: callbacks.append(self.private_currency))
+
+		frappe.set_user(self.users["reader"])
+		with patch.dict(frappe.controllers[frappe.local.site], {self.doc.doctype: RecomputedReadDocument}):
+			doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+			doc.apply_fieldlevel_read_permissions()
+			doc.public_value = "server computes after filtering"
+			with patch.object(frappe, "in_test", False):
+				doc.save()
+			frappe.db.after_commit.run()
+		self.assertEqual(callbacks, [SENTINEL + 1])
+		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "private_currency"), SENTINEL + 1)
+		versions = frappe.get_all(
+			"Version", filters={"ref_doctype": doc.doctype, "docname": doc.name}, pluck="data"
+		)
+		self.assertTrue(
+			any(
+				["private_currency", SENTINEL, SENTINEL + 1] in json.loads(data).get("changed", [])
+				for data in versions
+			)
+		)
+
+	def test_trusted_db_update_keeps_reintroduced_computed_values(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		doc.apply_fieldlevel_read_permissions()
+		# db_update is a trusted backend primitive, not a caller-accessible API.
+		doc.private_currency = SENTINEL + 2
+		doc.db_update()
+		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "private_currency"), SENTINEL + 2)
