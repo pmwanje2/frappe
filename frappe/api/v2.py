@@ -195,6 +195,7 @@ def copy_doc(doctype: str, name: str, ignore_no_copy: bool = True):
 	doc.apply_fieldlevel_read_permissions()
 
 	copy = frappe.copy_doc(doc, ignore_no_copy=ignore_no_copy)
+	copy.apply_fieldlevel_read_permissions()
 
 	return copy.as_dict(no_private_properties=True, no_nulls=True)
 
