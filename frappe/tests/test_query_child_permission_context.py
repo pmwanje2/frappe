@@ -378,6 +378,38 @@ class TestChildPermissionContext(unittest.TestCase):
 			"GROUP BY `child_value` ORDER BY `total` DESC,`child_value` ASC",
 		)
 
+	def test_explicit_parent_context_cannot_skip_parent_table_authorization(self):
+		for mode in ("restricted", "computed"):
+			self.parent.get_field("lines").permlevel = int(mode == "restricted")
+			self.parent.get_field("lines").is_virtual = int(mode == "computed")
+			for check in (
+				self.engine.check_select_field_permission,
+				self.engine.check_filter_field_permission,
+			):
+				with self.subTest(mode=mode, check=check.__name__):
+					with self.assertRaises(frappe.PermissionError):
+						check("Line", "public_value", "Parent")
+
+	def test_alternate_child_resolvers_preserve_parent_table_authorization(self):
+		self.prepare_dot_query()
+		self.child.fields.extend([field("child_only"), field("_user_tags")])
+		for mode in ("restricted", "computed"):
+			self.parent.get_field("lines").permlevel = int(mode == "restricted")
+			self.parent.get_field("lines").is_virtual = int(mode == "computed")
+			for path in ("explicit", "unqualified", "backtick-filter", "backtick-order", "backtick-group"):
+				with self.subTest(mode=mode, path=path):
+					with self.assertRaises(frappe.PermissionError):
+						if path == "explicit":
+							self.engine._validate_and_prepare_filter_field("child_only", "Line")
+						elif path == "unqualified":
+							self.engine._validate_and_prepare_filter_field("child_only")
+						elif path == "backtick-filter":
+							self.engine._validate_and_prepare_filter_field("`tabLine`.`_user_tags`")
+						elif path == "backtick-order":
+							self.engine._validate_order_by("`tabLine`.`_user_tags`")
+						else:
+							self.engine._validate_group_by("`tabLine`.`_user_tags`")
+
 
 if __name__ == "__main__":
 	unittest.main()
