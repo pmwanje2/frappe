@@ -490,6 +490,9 @@ class Document(_DocumentBase):
 	def load_from_db(self) -> "Self":
 		"""Load document and children from database and create properties
 		from fields"""
+		self.flags.pop("response_omitted_fields", None)
+		self.flags.pop("response_omitted_child_fields", None)
+		self.__dict__.pop("permitted_fieldnames", None)
 
 		is_doctype = self.doctype == "DocType"
 
@@ -696,6 +699,7 @@ class Document(_DocumentBase):
 		if self.flags.in_print:
 			return self
 
+		self._clear_response_field_omissions()
 		self.flags.notifications_executed = []
 
 		if ignore_permissions is not None:
@@ -805,6 +809,8 @@ class Document(_DocumentBase):
 		:param ignore_version: Do not save version if True."""
 		if self.flags.in_print:
 			return self
+
+		self._clear_response_field_omissions()
 
 		self.flags.notifications_executed = []
 
@@ -1211,23 +1217,46 @@ class Document(_DocumentBase):
 			return
 
 		has_access_to = self.get_permlevel_access("read")
-
+		self.__dict__.pop("permitted_fieldnames", None)
+		omitted_fields = set(self.flags.response_omitted_fields or ())
 		for df in self.meta.fields:
-			if df.permlevel and hasattr(self, df.fieldname) and df.permlevel not in has_access_to:
+			if df.permlevel and df.permlevel not in has_access_to:
+				# Missing values and undeletable properties are withheld too.
+				omitted_fields.add(df.fieldname)
 				try:
 					delattr(self, df.fieldname)
 				except AttributeError:
-					# hasattr might return True for class attribute which can't be delattr-ed.
-					continue
+					pass
+		self.flags.response_omitted_fields = omitted_fields
 
+		self.flags.response_omitted_child_fields = {}
 		for table_field in self.meta.get_table_fields(include_computed=True):
-			for df in frappe.get_meta(table_field.options).fields or []:
-				if df.permlevel and df.permlevel not in has_access_to:
-					for child in self.get(table_field.fieldname) or []:
-						if hasattr(child, df.fieldname):
-							delattr(child, df.fieldname)
+			child_fields = frappe.get_meta(table_field.options).fields or []
+			child_omissions = {
+				df.fieldname for df in child_fields if df.permlevel and df.permlevel not in has_access_to
+			}
+			if child_omissions:
+				# Retain this native parent context for rows materialized after filtering.
+				self.flags.response_omitted_child_fields[table_field.fieldname] = child_omissions
+			for child in self.get(table_field.fieldname) or []:
+				child.__dict__.pop("permitted_fieldnames", None)
+				child.flags.response_omitted_fields = (
+					set(child.flags.response_omitted_fields or ()) | child_omissions
+				)
+				for fieldname in child_omissions:
+					try:
+						delattr(child, fieldname)
+					except AttributeError:
+						pass
 
 		self.mask_fields()
+
+	def _clear_response_field_omissions(self):
+		# A normal write operates on canonical values, including server-computed ones.
+		for doc in [self, *self.get_all_children()]:
+			doc.flags.pop("response_omitted_fields", None)
+			doc.flags.pop("response_omitted_child_fields", None)
+			doc.__dict__.pop("permitted_fieldnames", None)
 
 	def copy_with_fieldlevel_read_permissions(self) -> "Document":
 		"""Return a copy without the values the user is not allowed to read, so that this document stays
@@ -2572,8 +2601,6 @@ class Document(_DocumentBase):
 		masked_fieldnames = self.flags.get("masked_fieldnames")
 
 		for fieldname in self.meta.get_valid_fields():
-			if fieldname in (self.flags.response_omitted_fields or ()):
-				continue
 			value = field_values.get(fieldname)
 
 			# Masked fields hold the XXXXXXXX placeholder; pass it through untouched so it is not
@@ -2717,6 +2744,9 @@ class Document(_DocumentBase):
 		ignore_computed_child_tables=False,
 	) -> dict:
 		doc = self.get_valid_dict(convert_dates_to_str=convert_dates_to_str, ignore_nulls=no_nulls)
+		# Read-view omissions must not affect persistence, sanitization or length checks.
+		for fieldname in self.flags.response_omitted_fields or ():
+			doc.pop(fieldname, None)
 		doc["doctype"] = self.doctype
 
 		table_fieldnames = (
@@ -2736,6 +2766,10 @@ class Document(_DocumentBase):
 				)
 				for d in children
 			]
+			child_omissions = (self.flags.response_omitted_child_fields or {}).get(fieldname, ())
+			for row in doc[fieldname]:
+				for omitted_field in child_omissions:
+					row.pop(omitted_field, None)
 
 		if no_default_fields:
 			for key in default_fields:
