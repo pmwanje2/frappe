@@ -29,6 +29,13 @@ class TestHistoryPrivacyUpgrade(IntegrationTestCase):
 		self.parent = new_doctype(
 			track_changes=1,
 			fields=[
+				{
+					"fieldname": "masked_email",
+					"label": "Masked Email",
+					"fieldtype": "Data",
+					"options": "Email",
+					"mask": 1,
+				},
 				{"fieldname": "public_value", "label": "Public", "fieldtype": "Data"},
 				{"fieldname": "masked_value", "label": "Masked", "fieldtype": "Data", "mask": 1},
 				{"fieldname": "private_value", "label": "Private", "fieldtype": "Data", "permlevel": 1},
@@ -194,3 +201,15 @@ class TestHistoryPrivacyUpgrade(IntegrationTestCase):
 				"private_value": "private_value-secret",
 			},
 		)
+
+	def test_malformed_masked_history_fails_closed_without_breaking_valid_versions(self):
+		malformed = frappe.get_doc(
+			doctype="Version",
+			ref_doctype=self.parent.name,
+			docname=self.doc.name,
+			data=json.dumps({"changed": [["masked_email", {"bad": "before"}, {"bad": "after"}]]}),
+		).insert(ignore_permissions=True)
+		versions = self.read_versions("reader")
+		self.assertEqual([version.name for version in versions], [self.version.name])
+		frappe.set_user("Administrator")
+		self.assertIsInstance(json.loads(frappe.get_doc("Version", malformed.name).data), dict)
