@@ -213,3 +213,111 @@ class TestHistoryPrivacyUpgrade(IntegrationTestCase):
 		self.assertEqual([version.name for version in versions], [self.version.name])
 		frappe.set_user("Administrator")
 		self.assertIsInstance(json.loads(frappe.get_doc("Version", malformed.name).data), dict)
+
+	def test_milestone_activity_pagination_reaches_older_readable_rows(self):
+		from datetime import datetime, timedelta
+		from unittest.mock import patch
+
+		from frappe.desk.form.activity import get_milestone_activities
+
+		# A complete first raw page contains only unreadable or removed fields.
+		fields = [
+			"public_value",
+			"masked_value",
+			"public_value",
+			"private_value",
+			"removed_field",
+			"private_value",
+			"removed_field",
+			"private_value",
+		]
+		visible = []
+		for index, fieldname in enumerate(fields):
+			milestone = frappe.get_doc(
+				doctype="Milestone",
+				reference_type=self.doc.doctype,
+				reference_name=self.doc.name,
+				track_field=fieldname,
+				value=f"value-{index}",
+			).insert(ignore_permissions=True)
+			frappe.db.set_value(
+				"Milestone", milestone.name, "creation", datetime(2026, 1, 1) + timedelta(seconds=index)
+			)
+			if index < 3:
+				visible.append(milestone.name)
+		frappe.set_user(self.users["reader"])
+		with patch("frappe.desk.form.activity.MILESTONE_PAGE_SIZE", 2):
+			first, has_more, next_start = get_milestone_activities(self.doc, {}, start=0)
+			self.assertEqual([row["data"]["name"] for row in first], list(reversed(visible[1:])))
+			self.assertTrue(has_more)
+			self.assertEqual(next_start, 2)
+			second, has_more, final_start = get_milestone_activities(self.doc, {}, start=next_start)
+			self.assertEqual([row["data"]["name"] for row in second], [visible[0]])
+			self.assertFalse(has_more)
+			self.assertEqual(final_start, 3)
+		self.assertNotIn("removed_field", json.dumps(first + second))
+		self.assertNotIn("private_value", json.dumps(first + second))
+		self.assertNotIn("value-1", json.dumps(first + second))
+		self.assertIn("XXXXXXXX", json.dumps(first + second))
+
+	def prepare_alternate_child_query(self, *, computed=False):
+		# A unique parent relationship and child-only field exercise the actual
+		# explicit-DocType and unqualified resolver paths, not test copies.
+		self.child.append("fields", {"fieldname": "child_only", "label": "Child Only", "fieldtype": "Data"})
+		self.child.save()
+		self.parent.reload()
+		self.parent.set("fields", [df for df in self.parent.fields if df.fieldname != "private_rows"])
+		self.parent.save()
+		self.doc.reload()
+		self.doc.append("rows", {"child_only": "needle"})
+		self.doc.save(ignore_version=True)
+		self.parent.reload()
+		table_field = self.parent.get("fields", {"fieldname": "rows"})[0]
+		table_field.permlevel = 1
+		table_field.is_virtual = int(computed)
+		self.parent.save()
+		frappe.clear_cache(doctype=self.parent.name)
+		frappe.clear_cache(doctype=self.child.name)
+
+	def test_native_alternate_child_query_paths_deny_restricted_or_computed_table(self):
+		for computed in (False, True):
+			if not computed:
+				self.prepare_alternate_child_query()
+			else:
+				frappe.set_user("Administrator")
+				self.parent.reload()
+				self.parent.get("fields", {"fieldname": "rows"})[0].is_virtual = 1
+				self.parent.save()
+				frappe.clear_cache(doctype=self.parent.name)
+			frappe.set_user(self.users["reader"])
+			for path in ("explicit", "unqualified", "backtick-filter", "backtick-order", "backtick-group"):
+				with self.subTest(computed=computed, path=path):
+					options = {"fields": ["name"], "ignore_permissions": False}
+					if path == "explicit":
+						options["filters"] = [[self.child.name, "child_only", "=", "needle"]]
+					elif path == "unqualified":
+						options["filters"] = [["child_only", "=", "needle"]]
+					elif path == "backtick-filter":
+						options["filters"] = [[f"`tab{self.child.name}`.`_user_tags`", "=", "secret"]]
+					else:
+						options["order_by" if path == "backtick-order" else "group_by"] = (
+							f"`tab{self.child.name}`.`_user_tags`"
+						)
+					with self.assertRaises(frappe.PermissionError):
+						query = frappe.qb.get_query(self.parent.name, **options)
+						# Predicates execute against real rows; backtick clause permission
+						# must be enforced while constructing SQL, before execution.
+						if path in ("explicit", "unqualified"):
+							query.run()
+						else:
+							query.get_sql()
+
+	def test_native_alternate_child_predicates_keep_authorized_access(self):
+		self.prepare_alternate_child_query()
+		frappe.set_user(self.users["unmask"])
+		for filters in ([[self.child.name, "child_only", "=", "needle"]], [["child_only", "=", "needle"]]):
+			with self.subTest(filters=filters):
+				rows = frappe.qb.get_query(
+					self.parent.name, fields=["name"], filters=filters, ignore_permissions=False
+				).run(as_dict=True)
+				self.assertEqual([row.name for row in rows], [self.doc.name])
