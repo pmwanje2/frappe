@@ -1,9 +1,14 @@
 import time
-from unittest.mock import MagicMock
+from contextvars import Context
+from threading import Thread, current_thread
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+from redis.exceptions import ConnectionError
 
 import frappe
 from frappe.core.doctype.doctype.test_doctype import new_doctype
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.tests.test_api import FrappeAPITestCase
 from frappe.tests.utils import whitelist_for_tests
 from frappe.utils.caching import redis_cache, request_cache, site_cache
@@ -225,6 +230,165 @@ class TestRedisCache(FrappeAPITestCase):
 		with self.set_user("Mathematician"):
 			self.assertEqual(calculate_area(1), PI)
 			self.assertEqual(function_call_count, 2)
+
+
+class TestRedisCacheNativeConcurrency(UnitTestCase):
+	def setUp(self):
+		self.token = uuid4().hex
+		self.site = frappe.local.site
+		self.sites_path = frappe.local.sites_path
+		self.db_name = frappe.local.conf.db_name
+		self.user = frappe.session.user
+		frappe.local.cache.clear()
+
+	def in_request(self, callback, *, db_name=None, user=None):
+		def request():
+			frappe.init(self.site, sites_path=self.sites_path)
+			if db_name:
+				frappe.local.conf = frappe.local.conf.copy()
+				frappe.local.conf.db_name = db_name
+			frappe.set_user(user or self.user)
+			try:
+				return callback()
+			finally:
+				frappe.destroy()
+
+		return Context().run(request)
+
+	def test_miss_rereads_value_written_by_another_request(self):
+		calls = []
+		expected = [{"module_name": "Accounts", "app": "erpnext"}]
+
+		@redis_cache(ttl=CACHE_TTL)
+		def modules(token):
+			calls.append(token)
+			return expected
+
+		self.addCleanup(modules.clear_cache)
+		original_get = frappe.cache.get
+		reader = current_thread()
+		interleaved = False
+		worker_results, worker_errors = [], []
+
+		def worker_request():
+			try:
+				worker_results.append(self.in_request(lambda: modules(self.token)))
+			except BaseException as exc:
+				worker_errors.append(exc)
+
+		def get_after_another_request_writes(key, *args, **kwargs):
+			nonlocal interleaved
+			value = original_get(key, *args, **kwargs)
+			if current_thread() is reader and not interleaved and value is None:
+				interleaved = True
+				worker = Thread(target=worker_request)
+				worker.start()
+				worker.join(timeout=5)
+				self.assertFalse(worker.is_alive(), "the second request did not finish")
+			return value
+
+		with patch.object(frappe.cache, "get", side_effect=get_after_another_request_writes):
+			first = modules(self.token)
+			second = modules(self.token)
+
+		self.assertTrue(interleaved)
+		self.assertEqual(worker_errors, [])
+		self.assertEqual(worker_results, [expected])
+		self.assertEqual(calls, [self.token])
+		self.assertEqual((first, second), (expected, expected))
+
+	def test_cached_none_is_a_hit_in_same_and_new_requests(self):
+		calls = []
+
+		@redis_cache(ttl=CACHE_TTL)
+		def no_value(token):
+			calls.append(token)
+			return None
+
+		self.addCleanup(no_value.clear_cache)
+		self.assertIsNone(no_value(self.token))
+		self.assertIsNone(no_value(self.token))
+		self.assertIsNone(self.in_request(lambda: no_value(self.token)))
+		self.assertEqual(calls, [self.token])
+
+	def test_miss_computes_with_ttl_and_non_none_local_hit_avoids_get(self):
+		calls = []
+
+		@redis_cache(ttl=CACHE_TTL)
+		def value(token):
+			calls.append(token)
+			return [token]
+
+		self.addCleanup(value.clear_cache)
+		with patch.object(frappe.cache, "get", wraps=frappe.cache.get) as get:
+			self.assertEqual(value(self.token), [self.token])
+			get_count = get.call_count
+			self.assertEqual(value(self.token), [self.token])
+			self.assertEqual(get.call_count, get_count)
+
+		keys = frappe.cache.get_keys(f"{value.__module__}.{value.__qualname__}::")
+		self.assertEqual(len(keys), 1)
+		self.assertGreater(frappe.cache.pttl(keys[0]), 0)
+		self.assertLessEqual(frappe.cache.pttl(keys[0]), CACHE_TTL * 1000)
+		self.assertEqual(calls, [self.token])
+
+	def test_user_scoping(self):
+		calls = []
+
+		@redis_cache(user=True)
+		def value(token):
+			calls.append(frappe.session.user)
+			return frappe.session.user
+
+		for user in ("Cache User A", "Cache User B"):
+			self.addCleanup(lambda user=user: self.in_request(value.clear_cache, user=user))
+		self.assertEqual(self.in_request(lambda: value(self.token), user="Cache User A"), "Cache User A")
+		self.assertEqual(self.in_request(lambda: value(self.token), user="Cache User B"), "Cache User B")
+		self.assertEqual(self.in_request(lambda: value(self.token), user="Cache User A"), "Cache User A")
+		self.assertEqual(calls, ["Cache User A", "Cache User B"])
+
+	def test_site_and_shared_scoping(self):
+		for shared in (False, True):
+			with self.subTest(shared=shared):
+				calls = []
+
+				@redis_cache(shared=shared)
+				def value(token):
+					calls.append(frappe.local.conf.db_name)
+					return frappe.local.conf.db_name
+
+				other_db = f"cache-scope-{self.token}"
+				self.addCleanup(value.clear_cache)
+				self.addCleanup(lambda value=value: self.in_request(value.clear_cache, db_name=other_db))
+				first = value(self.token)
+				other = self.in_request(lambda: value(self.token), db_name=other_db)
+				self.assertEqual(first, self.db_name)
+				self.assertEqual(other, self.db_name if shared else other_db)
+				self.assertEqual(len(calls), 1 if shared else 2)
+				value.clear_cache()
+
+	def test_clear_cache_recomputes(self):
+		calls = []
+
+		@redis_cache
+		def value(token):
+			calls.append(token)
+			return len(calls)
+
+		self.addCleanup(value.clear_cache)
+		self.assertEqual(value(self.token), 1)
+		value.clear_cache()
+		self.assertEqual(value(self.token), 2)
+		self.assertEqual(calls, [self.token, self.token])
+
+	def test_get_connection_error_still_computes(self):
+		@redis_cache
+		def value(token):
+			return [token]
+
+		self.addCleanup(value.clear_cache)
+		with patch.object(frappe.cache, "get", side_effect=ConnectionError("local fixture GET unavailable")):
+			self.assertEqual(value(self.token), [self.token])
 
 
 class TestDocumentCache(FrappeAPITestCase):
