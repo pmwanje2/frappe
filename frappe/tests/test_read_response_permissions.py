@@ -8,13 +8,15 @@ import json
 from unittest.mock import patch
 
 import frappe
+import frappe.api.v2 as v2
 import frappe.client
+from frappe.desk.form import load
 from frappe.desk.form.load import get_versions
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
 SENTINEL = 314159.27
-PRIVATE = ("private_currency", "private_float", "private_int", "private_check", "private_nullable")
+PRIVATE = ("private_currency", "private_float", "private_int", "private_check", "private_nullable", "title")
 
 
 class TestReadResponsePermissions(IntegrationTestCase):
@@ -39,10 +41,18 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		).insert()
 		self.parent = new_doctype(
 			track_changes=1,
+			title_field="title",
 			fields=[
 				{"fieldname": "public_value", "label": "Public", "fieldtype": "Data", "reqd": 1},
 				{"fieldname": "public_zero", "label": "True Zero", "fieldtype": "Currency"},
 				{"fieldname": "public_nullable", "label": "Nullable", "fieldtype": "Data"},
+				{
+					"fieldname": "title",
+					"label": "Private Title",
+					"fieldtype": "Data",
+					"permlevel": 1,
+					"options": "Amount {private_currency}",
+				},
 				{
 					"fieldname": "private_currency",
 					"label": "Currency",
@@ -308,3 +318,92 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		doc.private_currency = SENTINEL + 2
 		doc.db_update()
 		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "private_currency"), SENTINEL + 2)
+
+	def test_v2_copy_omits_unknown_amounts_after_new_document_defaults(self):
+		frappe.set_user(self.users["reader"])
+		self.assert_private_omitted(v2.copy_doc(self.doc.doctype, self.doc.name), json_no_nulls=True)
+		frappe.set_user(self.users["finance"])
+		self.assertEqual(v2.copy_doc(self.doc.doctype, self.doc.name)["private_currency"], SENTINEL)
+
+	def test_rows_appended_to_filtered_view_keep_inherited_field_omissions(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		doc.apply_fieldlevel_read_permissions()
+		doc.append(
+			"rows", {"public_value": "appended", "private_currency": SENTINEL, "private_nullable": None}
+		)
+		rows = doc.as_dict()["rows"]
+		self.assertEqual([r["public_value"] for r in rows], ["row", "appended"])
+		for row in reversed(rows):
+			self.assertNotIn("private_currency", row)
+			self.assertNotIn("private_nullable", row)
+
+	def test_native_title_template_sees_canonical_values_during_filtered_save(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		doc.apply_fieldlevel_read_permissions()
+		doc.public_value = "changed public"
+		doc.save()
+		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "title"), f"Amount {SENTINEL}")
+
+	def test_reload_refreshes_actor_specific_virtual_field_cache(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		self.assertNotIn("private_computed", doc.as_dict())
+		doc.apply_fieldlevel_read_permissions()
+		frappe.set_user(self.users["finance"])
+		doc.reload()
+		result = doc.as_dict()
+		self.assertIn("private_computed", result)
+		self.assertEqual(result["private_computed"], SENTINEL)
+		self.assertEqual(result["private_currency"], SENTINEL)
+		self.assertIsNone(result["private_nullable"])
+
+	def test_form_read_preserves_full_cached_internal_document(self):
+		frappe.set_user(self.users["reader"])
+		frappe.get_cached_doc(self.doc.doctype, self.doc.name)
+		self.addCleanup(frappe.clear_document_cache, self.doc.doctype, self.doc.name)
+		with patch.object(frappe.local, "response", frappe._dict(docs=[])):
+			load.getdoc(self.doc.doctype, self.doc.name)
+			cached = frappe.get_cached_doc(self.doc.doctype, self.doc.name)
+			self.assertEqual(cached.get("private_currency"), SENTINEL)
+			self.assertEqual(cached.rows[0].get("private_currency"), SENTINEL)
+			self.assert_private_omitted(frappe.response.docs[0].as_dict())
+
+	def test_missing_and_readonly_property_fields_stay_omitted(self):
+		class PropertyReadDocument(Document):
+			@property
+			def private_currency(self):
+				return SENTINEL
+
+		frappe.set_user(self.users["reader"])
+		with self.subTest(kind="missing"):
+			doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+			delattr(doc, "private_currency")
+			doc.apply_fieldlevel_read_permissions()
+			self.assert_private_omitted(doc.as_dict())
+		with self.subTest(kind="readonly property"):
+			with patch.dict(frappe.controllers[frappe.local.site], {self.doc.doctype: PropertyReadDocument}):
+				doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+				doc.apply_fieldlevel_read_permissions()
+				self.assert_private_omitted(doc.as_dict())
+
+	def test_read_view_markers_cannot_hide_submitted_field_mutations_from_validation(self):
+		self.parent.is_submittable = 1
+		for permission in self.parent.permissions:
+			if permission.permlevel == 0:
+				permission.submit = 1
+		self.parent.save()
+		frappe.get_doc(self.doc.doctype, self.doc.name).submit()
+
+		class MutatingSubmittedDocument(Document):
+			def before_update_after_submit(self):
+				self.private_currency = SENTINEL + 1
+
+		frappe.set_user(self.users["reader"])
+		with patch.dict(frappe.controllers[frappe.local.site], {self.doc.doctype: MutatingSubmittedDocument}):
+			doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+			doc.apply_fieldlevel_read_permissions()
+			with self.assertRaises(frappe.UpdateAfterSubmitError):
+				doc.save()
+		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "private_currency"), SENTINEL)
