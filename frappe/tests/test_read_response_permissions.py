@@ -407,3 +407,15 @@ class TestReadResponsePermissions(IntegrationTestCase):
 			with self.assertRaises(frappe.UpdateAfterSubmitError):
 				doc.save()
 		self.assertEqual(frappe.db.get_value(doc.doctype, doc.name, "private_currency"), SENTINEL)
+
+	def test_late_child_direct_serialization_inherits_parent_omissions(self):
+		frappe.set_user(self.users["reader"])
+		doc = frappe.get_doc(self.doc.doctype, self.doc.name)
+		doc.apply_fieldlevel_read_permissions()
+		row = doc.append(
+			"rows", {"public_value": "appended", "private_currency": SENTINEL, "private_nullable": None}
+		)
+		result = row.as_dict()
+		self.assertEqual(result["public_value"], "appended")
+		self.assertNotIn("private_currency", result)
+		self.assertNotIn("private_nullable", result)
