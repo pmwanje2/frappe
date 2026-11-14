@@ -46,7 +46,7 @@ def getdoc(doctype: str, name: str | int):
 		frappe._set_document_in_cache(key, doc)
 
 	run_onload(doc)
-	doc.apply_fieldlevel_read_permissions()
+	doc = doc.copy_with_fieldlevel_read_permissions()
 
 	# add file list
 	doc.add_viewed()
