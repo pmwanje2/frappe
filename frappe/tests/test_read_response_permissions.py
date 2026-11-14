@@ -293,12 +293,12 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		versions = frappe.get_all(
 			"Version", filters={"ref_doctype": doc.doctype, "docname": doc.name}, pluck="data"
 		)
-		self.assertTrue(
-			any(
-				["private_currency", SENTINEL, SENTINEL + 1] in json.loads(data).get("changed", [])
-				for data in versions
-			)
-		)
+		expected_change = [
+			"private_currency",
+			self.doc.get_formatted("private_currency"),
+			doc.get_formatted("private_currency"),
+		]
+		self.assertTrue(any(expected_change in json.loads(data).get("changed", []) for data in versions))
 
 	def test_trusted_db_update_keeps_reintroduced_computed_values(self):
 		frappe.set_user(self.users["reader"])
