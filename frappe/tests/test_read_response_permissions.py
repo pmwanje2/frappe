@@ -82,6 +82,7 @@ class TestReadResponsePermissions(IntegrationTestCase):
 		).insert()
 		self.addCleanup(frappe.delete_doc, "DocType", self.child.name, force=True)
 		self.addCleanup(frappe.delete_doc, "DocType", self.parent.name, force=True)
+		self.addCleanup(frappe.set_user, "Administrator")
 		self.users = {}
 		for actor, roles in (("reader", []), ("finance", [{"role": "System Manager"}])):
 			user = frappe.get_doc(
