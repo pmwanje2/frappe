@@ -668,7 +668,7 @@ frappe.ui.Sidebar = class Sidebar {
 			suffix: { keyboard_shortcut: "ctrl+i" },
 			// the panel that frappe/flow/launcher.py adds to the page for those who may use Flow
 			onClick: () => window.flow?.toggle(),
-			condition: () => frappe.model.can_read("Flow Session"),
+			condition: () => frappe.boot.flow_enabled && frappe.model.can_read("Flow Session"),
 		});
 		this.$standard_items_band = this.wrapper.find(".standard-items-band");
 		this.standard_items.forEach((w) => {

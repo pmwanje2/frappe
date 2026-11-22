@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from jinja2.sandbox import SandboxedEnvironment
 
 import frappe
+from frappe.flow import is_disabled
 
 if TYPE_CHECKING:
 	from frappe.model.document import Document
@@ -19,7 +20,7 @@ CACHE_PREFIX = "flow_doctype_triggers::"
 
 def dispatch(doc: Document, method: str | None = None) -> None:
 	"""doc_events hook: enqueue any matching DocType Event triggers."""
-	if method not in DOC_EVENTS:
+	if is_disabled() or method not in DOC_EVENTS:
 		return
 	if doc.doctype in {"Flow Run", "Flow Trigger", "Flow Agent", "Flow Tool", "Flow Model"}:
 		return
@@ -46,6 +47,8 @@ def dispatch(doc: Document, method: str | None = None) -> None:
 
 def dispatch_scheduled() -> None:
 	"""Scheduler hook: fire any Scheduled triggers whose cron is due."""
+	if is_disabled():
+		return
 	from croniter import CroniterBadCronError, croniter
 
 	now = frappe.utils.now_datetime()
@@ -75,6 +78,8 @@ def fire(
 ) -> str | None:
 	"""Worker: render the prompt and run the agent. Returns the Flow Run name, or None if skipped.
 	`deleted_doc` is the target's last state when its deletion fired the trigger."""
+	if is_disabled():
+		return None
 	t = frappe.get_doc("Flow Trigger", trigger)
 	if not t.enabled:
 		return None

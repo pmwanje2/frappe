@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 import click
 
 import frappe
+from frappe.flow import is_disabled
 from frappe.flow.daemon.client import DaemonClient, DaemonError
 from frappe.flow.doctype.flow_tool.flow_tool import sync_server_tools
 from frappe.installer import update_site_config
@@ -90,7 +91,7 @@ def _run_or_warn(step: Callable[[], object]) -> None:
 
 def provision_site() -> None:
 	"""Give this site its flow server secret."""
-	if not frappe.conf.flow_server_secret:
+	if not is_disabled() and not frappe.conf.flow_server_secret:
 		update_site_config("flow_server_secret", frappe.generate_hash(length=48))
 
 

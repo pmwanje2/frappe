@@ -7,11 +7,14 @@ into it."""
 from urllib.parse import urlencode
 
 import frappe
+from frappe.flow import is_disabled
 
 no_cache = 1
 
 
 def get_context(context):
+	if is_disabled():
+		raise frappe.PageDoesNotExistError
 	if frappe.session.user == "Guest":
 		# back to the page asked for, such as a chat someone shared
 		frappe.local.flags.redirect_location = f"/login?{urlencode({'redirect-to': frappe.request.path})}"

@@ -45,8 +45,11 @@ class DaemonClient:
 	def for_site(cls) -> DaemonClient:
 		"""This site's client: the bench daemon's socket, the site's name and secret."""
 		import frappe
+		from frappe.flow import is_disabled
 		from frappe.flow.daemon import lifecycle
 
+		if is_disabled():
+			raise DaemonError(None, "Flow is disabled for this site")
 		if not frappe.conf.flow_server_secret:
 			raise DaemonError(None, "this site is not provisioned; run `bench flow-server setup`")
 		return cls(str(lifecycle.socket_path()), frappe.conf.flow_server_secret, site=frappe.local.site)

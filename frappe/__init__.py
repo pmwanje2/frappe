@@ -478,6 +478,13 @@ def whitelist(allow_guest=False, xss_safe=False, methods=None):
 def is_whitelisted(method):
 	from frappe.utils import sanitize_html
 
+	# Includes re-exported Flow APIs and whitelisted document controller methods.
+	if (getattr(method, "__module__", "") or "").startswith("frappe.flow."):
+		from frappe.flow import is_disabled
+
+		if is_disabled():
+			raise DoesNotExistError
+
 	is_guest = session["user"] == "Guest"
 	if method not in whitelisted or (is_guest and method not in guest_methods):
 		if method in whitelisted and is_guest and response.get("session_expired"):

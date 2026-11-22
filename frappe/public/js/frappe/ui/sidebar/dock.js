@@ -139,7 +139,7 @@ frappe.ui.Dock = class Dock {
 		}
 
 		// the panel that frappe/flow/launcher.py adds to the page for those who may use Flow
-		if (frappe.model.can_read("Flow Session")) {
+		if (frappe.boot.flow_enabled && frappe.model.can_read("Flow Session")) {
 			const $flow = this.make_utility({ label: __("Flow"), icon: "flow", css_class: "" });
 			$flow.on("click", () => window.flow?.toggle());
 			$utilities.append($flow);

@@ -16,23 +16,17 @@ app_email = "developers@frappe.io"
 before_install = "frappe.utils.install.before_install"
 after_install = [
 	"frappe.utils.install.after_install",
-	"frappe.flow.permissions.ensure_flow_role",
-	"frappe.flow.assistant.sync_builtin_assistant",
-	"frappe.flow.daemon.lifecycle.after_install",
+	"frappe.flow.site_hooks.after_install",
 ]
 after_app_install = [
 	"frappe.utils.install.create_desktop_icons_for_app",
 	"frappe.studio.sync.after_app_install",
-	"frappe.flow.assistant.sync_assistant_skills",
-	"frappe.flow.lib.agent.sync_agents",
-	"frappe.flow.lib.agent.sync_tools",
-	"frappe.flow.lib.trigger.sync_triggers",
+	"frappe.flow.site_hooks.after_app_install",
 ]
 before_app_uninstall = "frappe.studio.sync.before_app_uninstall"
 after_app_uninstall = [
 	"frappe.utils.install.delete_desktop_icons_for_app",
-	"frappe.flow.assistant.sync_assistant_skills",
-	"frappe.flow.lib.trigger.sync_triggers",
+	"frappe.flow.site_hooks.after_app_uninstall",
 ]
 
 page_js = {"setup-wizard": "public/js/frappe/setup_wizard.js"}
@@ -384,12 +378,7 @@ after_migrate = [
 	"frappe.desk.doctype.notification_type.notification_type.install_notification_types",
 	"frappe.automation.doctype.automation_trigger_queue.automation_trigger_queue.ensure_dedup_indexes",
 	"frappe.studio.sync.after_migrate",
-	"frappe.flow.permissions.ensure_flow_role",
-	"frappe.flow.assistant.sync_builtin_assistant",
-	"frappe.flow.lib.agent.sync_agents",
-	"frappe.flow.lib.agent.sync_tools",
-	"frappe.flow.lib.trigger.sync_triggers",
-	"frappe.flow.daemon.lifecycle.after_migrate",
+	"frappe.flow.site_hooks.after_migrate",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]

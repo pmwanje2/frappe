@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 
 import frappe
+from frappe.flow import is_disabled
 from frappe.utils import cint, make_filter_tuple, now_datetime
 
 CHUNK_DOCTYPE = "Flow Knowledge Chunk"
@@ -36,6 +37,8 @@ def enqueue_ingestion(source: str, rebuild: bool = False) -> None:
 
 def sync_due_sources() -> None:
 	"""Daily scheduler: enqueue an incremental sweep for every auto-sync DocType source."""
+	if is_disabled():
+		return
 	from frappe.flow.knowledge import store
 
 	# backups leave out the vector store, so a restored site has chunks but no table

@@ -4,6 +4,7 @@
 """Adds Flow's launcher to the pages of Desk, Studio and the apps-screen apps, which share no script."""
 
 import frappe
+from frappe.flow import is_disabled
 from frappe.utils import get_assets_json
 from frappe.utils.jinja_globals import bundled_asset
 
@@ -17,7 +18,8 @@ OWN_ROOTS = {"studio"}
 def add_to_page(response, request):
 	"""Adds the launcher's script to app pages of users who may use Flow."""
 	if (
-		request.method != "GET"
+		is_disabled()
+		or request.method != "GET"
 		or response.status_code != 200
 		or response.mimetype != "text/html"
 		or request.path.split("/")[1] not in get_app_roots()
