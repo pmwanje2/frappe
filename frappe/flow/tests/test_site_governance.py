@@ -18,6 +18,7 @@ from frappe.flow.daemon import callback, lifecycle
 from frappe.flow.daemon.client import DaemonClient, DaemonError
 from frappe.flow.doctype.flow_model.flow_model import FlowModel
 from frappe.flow.knowledge import ingest
+from frappe.studio import api as studio_api
 from frappe.www.flow import index
 
 HTML = "<html><body><p>Eve</p></body></html>"
@@ -129,6 +130,16 @@ class TestFlowSiteGovernance(TestCase):
 				boot_session(boot)
 				self.assertEqual(bool(boot.get("flow_enabled")), enabled)
 				self.assertEqual("flow_supported_file_types" in boot, enabled)
+
+	def test_studio_advertises_flow_only_on_opt_in_sites(self):
+		with patch.object(frappe, "has_permission", return_value=True) as permission:
+			self.assertFalse(studio_api.can_use_flow())
+			frappe.conf.disable_frappe_flow = 1
+			self.assertFalse(studio_api.can_use_flow())
+			permission.assert_not_called()
+			frappe.conf.disable_frappe_flow = 0
+			self.assertTrue(studio_api.can_use_flow())
+			permission.assert_called_once_with("Flow Session", "read")
 
 	def test_flow_hooks_sync_and_provision_only_on_opt_in_sites(self):
 		for config in ({}, {"disable_frappe_flow": 1}, {"disable_frappe_flow": 0}):
