@@ -131,7 +131,9 @@ def get_component_definition(component: str) -> dict:
 
 @frappe.whitelist()
 def can_use_flow() -> bool:
-	return bool(frappe.has_permission("Flow Session", "read"))
+	from frappe.flow import is_disabled
+
+	return not is_disabled() and bool(frappe.has_permission("Flow Session", "read"))
 
 
 @frappe.whitelist()
